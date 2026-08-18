@@ -142,50 +142,28 @@ class AudiobookshelfClient:
             return None
 
     def get_series_details(self, series_id: str, library_id: Optional[str] = None, user_token: Optional[str] = None) -> Optional[Dict[str, Any]]:
-        """Ruft die Details einer Serie ab inklusive aller Bücher (direkt via library_id oder Auto-Discovery)."""
-        # 1. Direkter Endpoint mit bekannter Library-ID (schnellster Pfad)
+        """Ruft direkt und ressourcenschonend nur die Details dieser Serie ab (1 gezielter HTTP-Aufruf)."""
+        # 1. Direkter Aufruf über Library-ID (schnellster Pfad)
         if library_id:
             url = f"{self.base_url}/api/libraries/{library_id}/series/{series_id}"
             try:
                 resp = requests.get(url, headers=self._get_headers(user_token), timeout=self.timeout)
                 if resp.status_code == 200:
                     data = resp.json()
-                    series_obj = data.get("series") or data
-                    books = series_obj.get("books") or series_obj.get("libraryItems") or []
-                    if books:
-                        return series_obj
+                    return data.get("series") or data
             except Exception as e:
-                logger.debug(f"Direkte Bibliotheks-Abfrage {url} fehlgeschlagen: {e}")
+                logger.debug(f"Direkte Bibliotheksabfrage {url} fehlgeschlagen: {e}")
 
-        # 2. Direkter Endpoint ohne Library-ID
+        # 2. Direkter Aufruf über /api/series/{series_id}
         url = f"{self.base_url}/api/series/{series_id}"
         try:
             resp = requests.get(url, headers=self._get_headers(user_token), timeout=self.timeout)
             if resp.status_code == 200:
                 data = resp.json()
-                series_obj = data.get("series") or data
-                books = series_obj.get("books") or series_obj.get("libraryItems") or []
-                if books:
-                    return series_obj
+                return data.get("series") or data
         except Exception as e:
             logger.debug(f"Direkte Serienabfrage {url} fehlgeschlagen: {e}")
 
-        # 3. Fallback: Alle Bibliotheken durchsuchen
-        try:
-            for lib in self.get_libraries(user_token):
-                lib_id = lib.get("id")
-                if not lib_id or lib_id == library_id:
-                    continue
-                url = f"{self.base_url}/api/libraries/{lib_id}/series/{series_id}"
-                resp = requests.get(url, headers=self._get_headers(user_token), timeout=self.timeout)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    series_obj = data.get("series") or data
-                    return series_obj
-        except Exception as e:
-            logger.warning(f"Bibliotheks-Scan für Serie '{series_id}' fehlgeschlagen: {e}")
-
-        logger.warning(f"Serie '{series_id}' konnte weder direkt noch über Bibliotheken gefunden werden.")
         return None
 
     def get_user_progress(self, user_token: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
@@ -261,6 +239,7 @@ class AudiobookshelfClient:
 
         # Nutzer-Fortschritt abrufen
         progress_map = self.get_user_progress(user_token)
+        logger.info(f"Prüfe Fortschritt für {len(sorted_books)} Bücher in Serie '{series_data.get('name', 'Serie')}'...")
 
         # Erstes unfertiges Buch suchen
         selected_book = None
@@ -291,6 +270,8 @@ class AudiobookshelfClient:
 
         book_id = selected_book.get("id") or selected_book.get("libraryItemId")
         title = selected_book.get("media", {}).get("metadata", {}).get("title") or selected_book.get("name") or selected_book.get("title") or "Unbekannter Titel"
+
+        logger.info(f"Nächstes Buch aufgelöst: '{title}' (ID: {book_id}, Folge: {selected_book.get('sequence')})")
 
         return {
             "series_id": series_id,
