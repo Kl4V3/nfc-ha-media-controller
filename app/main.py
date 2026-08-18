@@ -97,6 +97,12 @@ app.include_router(api_router)
 app.include_router(ws_router)
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    from fastapi import Response
+    return Response(status_code=204)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def serve_index(request: Request):
     """Liefert das Haupt-Dashboard / Frontend aus."""

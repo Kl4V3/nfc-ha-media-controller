@@ -19,7 +19,7 @@ class AudiobookshelfClient:
             "Content-Type": "application/json"
         }
         if token:
-            headers["Authorization"] = f"Bearer {token}"
+            headers["Authorization"] = f"Bearer {token.strip()}"
         return headers
 
     def test_connection(self, user_token: Optional[str] = None) -> Dict[str, Any]:
@@ -29,9 +29,16 @@ class AudiobookshelfClient:
             resp = requests.get(url, headers=self._get_headers(user_token), timeout=self.timeout)
             if resp.status_code == 200:
                 user_data = resp.json()
+                # Audiobookshelf kann {user: {username}} oder direkt {username} zurückgeben
+                username = (
+                    user_data.get("user", {}).get("username")
+                    or user_data.get("username")
+                    or user_data.get("user", {}).get("name")
+                    or "Connected"
+                )
                 return {
                     "success": True,
-                    "username": user_data.get("user", {}).get("username", "Unknown"),
+                    "username": username,
                     "server": self.base_url,
                     "status_code": resp.status_code
                 }
@@ -54,7 +61,10 @@ class AudiobookshelfClient:
             resp = requests.get(url, headers=self._get_headers(user_token), timeout=self.timeout)
             if resp.status_code == 200:
                 data = resp.json()
-                return data.get("libraries", [])
+                libraries = data.get("libraries", data) if isinstance(data, dict) else data
+                if isinstance(libraries, list):
+                    return libraries
+            logger.warning(f"ABS Libraries Antwort: {resp.status_code} {resp.text[:150]}")
             return []
         except Exception as e:
             logger.warning(f"Konnte ABS-Bibliotheken nicht abrufen: {e}")
@@ -66,23 +76,57 @@ class AudiobookshelfClient:
         try:
             libraries = [library_id] if library_id else [lib["id"] for lib in self.get_libraries(user_token)]
             for lib_id in libraries:
-                url = f"{self.base_url}/api/libraries/{lib_id}/series"
+                url = f"{self.base_url}/api/libraries/{lib_id}/series?limit=100"
                 resp = requests.get(url, headers=self._get_headers(user_token), timeout=self.timeout)
                 if resp.status_code == 200:
                     data = resp.json()
-                    # Audiobookshelf gibt je nach Version 'results' oder direkt ein Array zurück
-                    series_items = data.get("results", data) if isinstance(data, dict) else data
-                    if isinstance(series_items, list):
-                        for s in series_items:
-                            all_series.append({
-                                "id": s.get("id"),
-                                "name": s.get("name"),
-                                "library_id": lib_id,
-                                "num_books": s.get("numBooks", len(s.get("books", [])))
-                            })
+                    # Audiobookshelf gibt je nach Version 'results', 'series' oder ein Array zurück
+                    series_items = []
+                    if isinstance(data, dict):
+                        series_items = data.get("results") or data.get("series") or []
+                    elif isinstance(data, list):
+                        series_items = data
+
+                    for s in series_items:
+                        books = s.get("books", [])
+                        num_books = s.get("numBooks", len(books))
+                        all_series.append({
+                            "id": s.get("id"),
+                            "name": s.get("name"),
+                            "library_id": lib_id,
+                            "num_books": num_books
+                        })
         except Exception as e:
             logger.warning(f"Konnte ABS-Serien nicht abrufen: {e}")
         return all_series
+
+    def get_items_list(self, library_id: Optional[str] = None, user_token: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
+        """Gibt einzelne Hörbücher / Tracks aus den Bibliotheken zurück."""
+        all_items = []
+        try:
+            libraries = [library_id] if library_id else [lib["id"] for lib in self.get_libraries(user_token)]
+            for lib_id in libraries:
+                url = f"{self.base_url}/api/libraries/{lib_id}/items?limit={limit}"
+                resp = requests.get(url, headers=self._get_headers(user_token), timeout=self.timeout)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    raw_items = data.get("results", []) if isinstance(data, dict) else data
+                    if isinstance(raw_items, list):
+                        for item in raw_items:
+                            media = item.get("media", {})
+                            meta = media.get("metadata", {})
+                            title = meta.get("title") or item.get("name") or "Unbekannt"
+                            author = meta.get("authorName") or meta.get("artist") or ""
+                            all_items.append({
+                                "id": item.get("id"),
+                                "title": title,
+                                "author": author,
+                                "library_id": lib_id,
+                                "duration": media.get("duration", 0)
+                            })
+        except Exception as e:
+            logger.warning(f"Konnte ABS-Items nicht abrufen: {e}")
+        return all_items
 
     def get_series_details(self, series_id: str, user_token: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Ruft die Details einer Serie ab inklusive aller Bücher."""
@@ -111,7 +155,6 @@ class AudiobookshelfClient:
             resp = requests.get(url, headers=self._get_headers(user_token), timeout=self.timeout)
             if resp.status_code == 200:
                 items = resp.json()
-                # items kann ein Array von Progress-Objekten sein
                 if isinstance(items, list):
                     for prog in items:
                         item_id = prog.get("libraryItemId")

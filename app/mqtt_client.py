@@ -8,6 +8,7 @@ import paho.mqtt.client as mqtt
 from app.config import AppConfig
 from app.database import (
     get_reader_by_id,
+    upsert_reader,
     get_tag_by_id,
     auto_discover_or_update_tag,
     add_scan_history
@@ -168,16 +169,27 @@ class MQTTService:
 
         db_path = self.config.database_path
 
-        # 1. Reader aus der Datenbank ermitteln
+        # 1. Reader aus der Datenbank ermitteln oder neu anlegen (Auto-Discovery)
         reader = get_reader_by_id(db_path, reader_id)
         if reader and reader.get("target_player"):
             target_player = reader["target_player"]
             abs_user_token = reader.get("abs_user_token") or self.config.audiobookshelf.default_token
         else:
-            # Fallback falls Reader nicht in DB registriert ist
+            # Auto-Discovery: Reader direkt in DB eintragen
             target_player = f"media_player.{reader_id}"
             abs_user_token = self.config.audiobookshelf.default_token
-            logger.info(f"Reader '{reader_id}' nicht in DB konfiguriert -> Fallback target_player: '{target_player}'")
+            upsert_reader(db_path, {
+                "reader_id": reader_id,
+                "target_player": target_player,
+                "abs_user_token": "",
+                "notes": f"Auto-discovered ({time.strftime('%Y-%m-%d %H:%M')})"
+            })
+            logger.info(f"Auto-Discovery: Neuer Reader '{reader_id}' registriert -> Default Player: '{target_player}'")
+            self._broadcast_event({
+                "type": "reader_discovered",
+                "reader_id": reader_id,
+                "target_player": target_player
+            })
 
         # 2. Tag-Removed-Event (Toniebox-Prinzip)
         if status == "removed":

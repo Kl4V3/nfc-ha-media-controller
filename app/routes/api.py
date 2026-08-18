@@ -158,6 +158,12 @@ def get_abs_series(request: Request, library_id: Optional[str] = None, token: Op
     return abs_client.get_series_list(library_id=library_id, user_token=token)
 
 
+@api_router.get("/abs/items")
+def get_abs_items(request: Request, library_id: Optional[str] = None, token: Optional[str] = None, limit: int = 50):
+    abs_client = request.app.state.abs_client
+    return abs_client.get_items_list(library_id=library_id, user_token=token, limit=limit)
+
+
 @api_router.get("/abs/series/{series_id}")
 def get_abs_series_details(series_id: str, request: Request, token: Optional[str] = None):
     abs_client = request.app.state.abs_client

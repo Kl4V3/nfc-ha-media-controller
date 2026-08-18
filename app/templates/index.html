@@ -250,22 +250,24 @@
                 <!-- Audiobookshelf Explorer -->
                 <div class="card">
                     <div class="card-header">
-                        <h3>Audiobookshelf Serien-Explorer</h3>
-                        <span class="badge badge-primary">API Browser</span>
+                        <h3>Audiobookshelf Explorer</h3>
+                        <div class="header-tab-switch">
+                            <button id="btn-abs-tab-series" class="btn btn-sm btn-primary">📚 Serien</button>
+                            <button id="btn-abs-tab-items" class="btn btn-sm btn-secondary">🎧 Hörbücher / Tracks</button>
+                        </div>
                     </div>
                     <div class="card-body">
-                        <p class="card-desc">Durchsuche deine Audiobookshelf-Bibliotheken und kopiere Serien-IDs mit einem Klick.</p>
+                        <p class="card-desc">Durchsuche deine Audiobookshelf-Bibliotheken und übernimm Serien- oder Track-IDs mit 1-Klick in deine Tags.</p>
                         
                         <div class="form-group">
-                            <div class="input-with-btn">
-                                <button id="btn-load-abs-series" class="btn btn-secondary w-100">
-                                    🔄 Serien aus Audiobookshelf laden
-                                </button>
+                            <div class="search-box w-100">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                                <input type="text" id="abs-search-input" placeholder="In ABS suchen...">
                             </div>
                         </div>
 
-                        <div id="abs-series-list" class="abs-list-container">
-                            <p class="text-muted text-center py-4">Klicke oben, um Serien abzurufen.</p>
+                        <div id="abs-content-list" class="abs-list-container">
+                            <p class="text-muted text-center py-4">Lade Inhalte aus Audiobookshelf...</p>
                         </div>
                     </div>
                 </div>
@@ -392,6 +394,26 @@
                     <button type="submit" class="btn btn-primary">Speichern</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- =======================================================================
+         MODAL: PAYLOAD VIEWER
+         ======================================================================= -->
+    <div id="payload-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3>MQTT Payload Inspector</h3>
+                <button class="modal-close" data-close-modal>&times;</button>
+            </div>
+            <div class="modal-body">
+                <pre id="payload-modal-content" class="code-block" style="max-height: 400px;"></pre>
+            </div>
+            <div class="modal-footer">
+                <button type="button" id="btn-copy-payload-modal" class="btn btn-primary">📋 Kopieren</button>
+                <button type="button" class="btn btn-secondary" data-close-modal>Schließen</button>
+            </div>
         </div>
     </div>
 

@@ -6,6 +6,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // State
     let tagsList = [];
     let readersList = [];
+    let historyList = [];
+    let absContentList = [];
+    let absCurrentTab = 'series'; // 'series' or 'items'
     let ws = null;
     let currentEditingTagId = null;
 
@@ -66,6 +69,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const inputReaderAbsToken = document.getElementById('reader-abs-token');
     const inputReaderNotes = document.getElementById('reader-notes');
 
+    const elPayloadModal = document.getElementById('payload-modal');
+    const elPayloadModalContent = document.getElementById('payload-modal-content');
+    const btnCopyPayloadModal = document.getElementById('btn-copy-payload-modal');
+
     // DOM Elements - Simulator & ABS
     const inputSimReaderId = document.getElementById('sim-reader-id');
     const inputSimTagId = document.getElementById('sim-tag-id');
@@ -73,8 +80,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnSimRemove = document.getElementById('btn-sim-remove');
     const elSimResultContainer = document.getElementById('sim-result-container');
     const elSimResultOutput = document.getElementById('sim-result-output');
-    const btnLoadAbsSeries = document.getElementById('btn-load-abs-series');
-    const elAbsSeriesList = document.getElementById('abs-series-list');
+    
+    const btnAbsTabSeries = document.getElementById('btn-abs-tab-series');
+    const btnAbsTabItems = document.getElementById('btn-abs-tab-items');
+    const inputAbsSearch = document.getElementById('abs-search-input');
+    const elAbsContentList = document.getElementById('abs-content-list');
 
     // =========================================================================
     // INITIALIZATION & TAB NAVIGATION
@@ -93,6 +103,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (btn.dataset.tab === 'history-tab') {
                 loadHistory();
+            } else if (btn.dataset.tab === 'tools-tab') {
+                loadAbsContent();
             }
         });
     });
@@ -100,15 +112,17 @@ document.addEventListener('DOMContentLoaded', () => {
     // Close Modals via Close-Buttons & Backdrop
     document.querySelectorAll('[data-close-modal]').forEach(el => {
         el.addEventListener('click', () => {
-            elTagModal.classList.add('hidden');
-            elReaderModal.classList.add('hidden');
+            if (elTagModal) elTagModal.classList.add('hidden');
+            if (elReaderModal) elReaderModal.classList.add('hidden');
+            if (elPayloadModal) elPayloadModal.classList.add('hidden');
         });
     });
 
     document.querySelectorAll('.modal-backdrop').forEach(bd => {
         bd.addEventListener('click', () => {
-            elTagModal.classList.add('hidden');
-            elReaderModal.classList.add('hidden');
+            if (elTagModal) elTagModal.classList.add('hidden');
+            if (elReaderModal) elReaderModal.classList.add('hidden');
+            if (elPayloadModal) elPayloadModal.classList.add('hidden');
         });
     });
 
@@ -120,9 +134,9 @@ document.addEventListener('DOMContentLoaded', () => {
             inputTagTargetId.placeholder = 'ser_xyz';
             btnPickAbsSeries.classList.remove('hidden');
         } else if (val === 'Hoerbuch' || val === 'Playlist') {
-            elTargetIdHelper.textContent = 'Medien-URI oder ABS-Item-ID (z. B. mass://track/123)';
-            inputTagTargetId.placeholder = 'mass://track/123 oder abs-item-id';
-            btnPickAbsSeries.classList.add('hidden');
+            elTargetIdHelper.textContent = 'Medien-URI oder ABS-Item-ID (z. B. mass://track/123 oder abs-item-id)';
+            inputTagTargetId.placeholder = 'audiobookshelf://track/xyz oder mass://track/123';
+            btnPickAbsSeries.classList.remove('hidden');
         } else if (val === 'Licht' || val === 'Szene') {
             elTargetIdHelper.textContent = 'Home Assistant Entitäts-ID (z. B. light.kinderzimmer oder scene.schlafenszeit)';
             inputTagTargetId.placeholder = 'light.kinderzimmer';
@@ -166,8 +180,8 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const res = await fetch('/api/history?limit=50');
             if (res.ok) {
-                const history = await res.json();
-                renderHistoryTable(history);
+                historyList = await res.json();
+                renderHistoryTable(historyList);
             }
         } catch (e) {
             console.error('Fehler beim Laden der Historie:', e);
@@ -192,7 +206,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 // ABS
                 if (data.audiobookshelf.reachable) {
                     elStatusAbs.className = 'status-indicator status-connected';
-                    elStatusAbs.querySelector('.label').textContent = `ABS: ${data.audiobookshelf.username || 'Verbunden'}`;
+                    const userLabel = data.audiobookshelf.username ? data.audiobookshelf.username : 'Verbunden';
+                    elStatusAbs.querySelector('.label').textContent = `ABS: ${userLabel}`;
                 } else {
                     elStatusAbs.className = 'status-indicator status-unknown';
                     elStatusAbs.querySelector('.label').textContent = `ABS: Nicht erreichbar`;
@@ -240,15 +255,26 @@ document.addEventListener('DOMContentLoaded', () => {
         elTagsTableBody.innerHTML = filtered.map(tag => {
             const isUnconfigured = !tag.action_type || tag.action_type.trim() === '';
             const statusBadge = isUnconfigured
-                ? `<span class="badge badge-warning">⚠️ Neu / Unkonfiguriert</span>`
+                ? `<span class="badge badge-warning">⚠️ Unkonfiguriert</span>`
                 : `<span class="badge badge-configured">✅ Bereit</span>`;
 
-            const actionTypeBadge = tag.action_type
+            const actionTypeBadge = tag.action_type && tag.action_type.trim() !== ''
                 ? `<span class="badge badge-type">${escapeHtml(tag.action_type)}</span>`
                 : `<span class="text-muted">—</span>`;
 
-            const volumeDisplay = tag.volume !== null ? `${tag.volume}%` : `<span class="text-muted">Standard</span>`;
-            const randomDisplay = tag.random ? '🔀 Ja' : '<span class="text-muted">Nein</span>';
+            // Nur wenn konfiguriert Werte anzeigen
+            const targetDisplay = (!isUnconfigured && tag.target_id)
+                ? `<span title="${escapeHtml(tag.target_id)}">${escapeHtml(truncate(tag.target_id, 28))}</span>`
+                : `<span class="text-muted">—</span>`;
+
+            const volumeDisplay = isUnconfigured
+                ? `<span class="text-muted">—</span>`
+                : (tag.volume !== null ? `${tag.volume}%` : `<span class="text-muted">Standard</span>`);
+
+            const randomDisplay = isUnconfigured
+                ? `<span class="text-muted">—</span>`
+                : (tag.random ? '🔀 Ja' : '<span class="text-muted">Nein</span>');
+
             const lastScannedDisplay = tag.last_scanned ? formatDate(tag.last_scanned) : '<span class="text-muted">Nie</span>';
 
             return `
@@ -257,9 +283,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td class="font-mono"><strong>${escapeHtml(tag.tag_id)}</strong></td>
                     <td>${escapeHtml(tag.alias || 'Unbenannt')}</td>
                     <td>${actionTypeBadge}</td>
-                    <td class="font-mono text-muted" title="${escapeHtml(tag.target_id || '')}">
-                        ${escapeHtml(truncate(tag.target_id || '—', 28))}
-                    </td>
+                    <td class="font-mono text-muted">${targetDisplay}</td>
                     <td>${volumeDisplay}</td>
                     <td>${randomDisplay}</td>
                     <td>${lastScannedDisplay}</td>
@@ -316,7 +340,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        elHistoryTableBody.innerHTML = items.map(item => {
+        elHistoryTableBody.innerHTML = items.map((item, idx) => {
             let statusBadge = `<span class="badge badge-info">${escapeHtml(item.status)}</span>`;
             if (item.action_executed === 'warning') statusBadge = `<span class="badge badge-warning">⚠️ Warnung</span>`;
             if (item.action_executed === 'stop') statusBadge = `<span class="badge badge-type">⏹ Stop</span>`;
@@ -332,11 +356,50 @@ document.addEventListener('DOMContentLoaded', () => {
                     </td>
                     <td class="font-mono">${escapeHtml(item.reader_id)}</td>
                     <td><code>${escapeHtml(item.action_executed || '—')}</code></td>
-                    <td class="font-mono text-muted text-xs">${escapeHtml(truncate(item.payload || '', 40))}</td>
+                    <td>
+                        <div class="payload-cell">
+                            <span class="font-mono text-muted text-xs" title="${escapeHtml(item.payload || '')}">
+                                ${escapeHtml(truncate(item.payload || '', 36))}
+                            </span>
+                            <button class="btn btn-xs btn-secondary" onclick="window.copyPayload(${idx})" title="In Zwischenablage kopieren">
+                                📋
+                            </button>
+                            <button class="btn btn-xs btn-secondary" onclick="window.viewPayload(${idx})" title="Vollständigen Payload anzeigen">
+                                👁️
+                            </button>
+                        </div>
+                    </td>
                 </tr>
             `;
         }).join('');
     }
+
+    // Payload Clipboard & Viewer
+    window.copyPayload = function(idx) {
+        const item = historyList[idx];
+        if (!item || !item.payload) return;
+        navigator.clipboard.writeText(item.payload).then(() => {
+            alert('Payload in die Zwischenablage kopiert! ✅');
+        }).catch(err => {
+            console.error('Kopieren fehlgeschlagen:', err);
+        });
+    };
+
+    window.viewPayload = function(idx) {
+        const item = historyList[idx];
+        if (!item) return;
+        try {
+            const parsed = JSON.parse(item.payload);
+            elPayloadModalContent.textContent = JSON.stringify(parsed, null, 2);
+        } catch {
+            elPayloadModalContent.textContent = item.payload || '';
+        }
+        btnCopyPayloadModal.onclick = () => {
+            navigator.clipboard.writeText(elPayloadModalContent.textContent);
+            alert('Kopiert! ✅');
+        };
+        elPayloadModal.classList.remove('hidden');
+    };
 
     // Filter listeners
     elSearchInput.addEventListener('input', renderTagsTable);
@@ -398,12 +461,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const tagId = inputTagId.value.trim();
         const alias = inputTagAlias.value.trim();
         const actionType = selectTagActionType.value;
-        const volumeVal = inputTagVolume.value ? parseInt(inputTagVolume.value, 10) : null;
+        const volumeVal = inputTagVolume.value !== '' ? parseInt(inputTagVolume.value, 10) : null;
         const targetId = inputTagTargetId.value.trim();
         const random = checkTagRandom.checked;
         const extraParams = inputTagExtraParams.value.trim() || '{}';
 
-        // Validierung
         if (!tagId || !alias) {
             alert('Bitte Tag ID und Name angeben.');
             return;
@@ -550,6 +612,7 @@ document.addEventListener('DOMContentLoaded', () => {
             elSimResultContainer.classList.remove('hidden');
             elSimResultOutput.textContent = JSON.stringify(data, null, 2);
             await loadTags();
+            await loadReaders();
         } catch (e) {
             alert('Simulationsfehler: ' + e);
         }
@@ -558,50 +621,92 @@ document.addEventListener('DOMContentLoaded', () => {
     btnSimScan.addEventListener('click', () => runSimulation('scanned'));
     btnSimRemove.addEventListener('click', () => runSimulation('removed'));
 
-    btnLoadAbsSeries.addEventListener('click', async () => {
-        elAbsSeriesList.innerHTML = `<p class="text-muted text-center py-4">Lade Serien aus Audiobookshelf...</p>`;
-        try {
-            const res = await fetch('/api/abs/series');
-            if (res.ok) {
-                const series = await res.json();
-                if (series.length === 0) {
-                    elAbsSeriesList.innerHTML = `<p class="text-muted text-center py-4">Keine Serien in Audiobookshelf gefunden.</p>`;
-                    return;
-                }
-                elAbsSeriesList.innerHTML = series.map(s => `
-                    <div class="abs-series-item">
-                        <div>
-                            <div class="abs-series-title">${escapeHtml(s.name)}</div>
-                            <div class="abs-series-meta font-mono">ID: ${escapeHtml(s.id)} (${s.num_books} Bücher)</div>
-                        </div>
-                        <button type="button" class="btn btn-sm btn-primary" onclick="window.selectAbsSeries('${escapeHtml(s.id)}', '${escapeHtml(s.name)}')">
-                            Übernehmen
-                        </button>
-                    </div>
-                `).join('');
-            } else {
-                elAbsSeriesList.innerHTML = `<p class="text-danger text-center py-4">Fehler beim Laden der Serien.</p>`;
-            }
-        } catch (e) {
-            elAbsSeriesList.innerHTML = `<p class="text-danger text-center py-4">ABS nicht erreichbar: ${e}</p>`;
-        }
+    // ABS Explorer
+    btnAbsTabSeries.addEventListener('click', () => {
+        absCurrentTab = 'series';
+        btnAbsTabSeries.className = 'btn btn-sm btn-primary';
+        btnAbsTabItems.className = 'btn btn-sm btn-secondary';
+        loadAbsContent();
     });
 
-    window.selectAbsSeries = function(seriesId, seriesName) {
-        inputTagTargetId.value = seriesId;
-        if (!inputTagAlias.value) {
-            inputTagAlias.value = seriesName;
+    btnAbsTabItems.addEventListener('click', () => {
+        absCurrentTab = 'items';
+        btnAbsTabItems.className = 'btn btn-sm btn-primary';
+        btnAbsTabSeries.className = 'btn btn-sm btn-secondary';
+        loadAbsContent();
+    });
+
+    inputAbsSearch.addEventListener('input', () => {
+        renderAbsContentList();
+    });
+
+    async function loadAbsContent() {
+        elAbsContentList.innerHTML = `<p class="text-muted text-center py-4">Lade Inhalte aus Audiobookshelf...</p>`;
+        const endpoint = absCurrentTab === 'series' ? '/api/abs/series' : '/api/abs/items?limit=100';
+        try {
+            const res = await fetch(endpoint);
+            if (res.ok) {
+                absContentList = await res.json();
+                renderAbsContentList();
+            } else {
+                elAbsContentList.innerHTML = `<p class="text-danger text-center py-4">Fehler beim Laden von ABS (HTTP ${res.status}).</p>`;
+            }
+        } catch (e) {
+            elAbsContentList.innerHTML = `<p class="text-danger text-center py-4">ABS nicht erreichbar: ${e}</p>`;
         }
-        selectTagActionType.value = 'Serie';
+    }
+
+    function renderAbsContentList() {
+        const query = inputAbsSearch.value.toLowerCase().trim();
+        const filtered = absContentList.filter(item => {
+            const title = (item.name || item.title || '').toLowerCase();
+            const id = (item.id || '').toLowerCase();
+            const author = (item.author || '').toLowerCase();
+            return title.includes(query) || id.includes(query) || author.includes(query);
+        });
+
+        if (filtered.length === 0) {
+            const emptyMsg = absCurrentTab === 'series'
+                ? 'Keine Serien in Audiobookshelf gefunden (prüfe, ob in ABS Serien angelegt sind oder wechsle zu "Hörbücher / Tracks").'
+                : 'Keine Hörbücher in Audiobookshelf gefunden.';
+            elAbsContentList.innerHTML = `<p class="text-muted text-center py-4">${emptyMsg}</p>`;
+            return;
+        }
+
+        elAbsContentList.innerHTML = filtered.map(item => {
+            const isSeries = absCurrentTab === 'series';
+            const title = item.name || item.title || 'Unbekannt';
+            const meta = isSeries
+                ? `Serie (${item.num_books} Bücher) • ID: ${item.id}`
+                : `${item.author ? item.author + ' • ' : ''}ID: ${item.id}`;
+
+            return `
+                <div class="abs-series-item">
+                    <div>
+                        <div class="abs-series-title">${escapeHtml(title)}</div>
+                        <div class="abs-series-meta font-mono">${escapeHtml(meta)}</div>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-primary" onclick="window.selectAbsItem('${escapeHtml(item.id)}', '${escapeHtml(title)}', ${isSeries})">
+                        Übernehmen
+                    </button>
+                </div>
+            `;
+        }).join('');
+    }
+
+    window.selectAbsItem = function(id, title, isSeries) {
+        inputTagTargetId.value = id;
+        if (!inputTagAlias.value) {
+            inputTagAlias.value = title;
+        }
+        selectTagActionType.value = isSeries ? 'Serie' : 'Hoerbuch';
         selectTagActionType.dispatchEvent(new Event('change'));
-        // Modal anzeigen falls nicht offen
         elTagModal.classList.remove('hidden');
     };
 
     btnPickAbsSeries.addEventListener('click', () => {
-        // Tab wechseln zum Tools-Tab & Serien laden
         document.querySelector('[data-tab="tools-tab"]').click();
-        btnLoadAbsSeries.click();
+        loadAbsContent();
     });
 
     // =========================================================================
@@ -644,6 +749,8 @@ document.addEventListener('DOMContentLoaded', () => {
             showLiveBanner(data);
             loadTags();
             loadHistory();
+        } else if (data.type === 'reader_discovered') {
+            loadReaders();
         } else if (data.type === 'mqtt_status') {
             checkSystemStatus();
         }

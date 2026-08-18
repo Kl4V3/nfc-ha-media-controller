@@ -375,6 +375,24 @@ body {
     border-radius: var(--radius-sm);
 }
 
+.btn-xs {
+    padding: 2px 6px;
+    font-size: 11px;
+    border-radius: var(--radius-sm);
+    line-height: 1;
+}
+
+.header-tab-switch {
+    display: flex;
+    gap: 6px;
+}
+
+.payload-cell {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
 .btn-primary {
     background-color: var(--accent-primary);
     color: #0f172a;
