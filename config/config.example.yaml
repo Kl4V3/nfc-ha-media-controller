@@ -1,0 +1,48 @@
+# ==============================================================================
+# NFC-Media-Controller Configuration
+# ==============================================================================
+# This file can be mounted to /app/data/config.yaml.
+# All values can also be overridden via environment variables
+# (e.g., MQTT_BROKER, MQTT_PASSWORD, ABS_BASE_URL, etc.).
+
+# ------------------------------------------------------------------------------
+# MQTT Broker Settings
+# ------------------------------------------------------------------------------
+mqtt:
+  broker: "192.168.1.50"          # Hostname or IP of your MQTT broker (e.g. "mosquitto")
+  port: 1883                      # Standard MQTT port (1883) or SSL (8883)
+  username: "nfc_user"            # Optional: MQTT username
+  password: "secret_password"     # Optional: MQTT password
+  client_id: "nfc_media_middleware"
+  topic_scanned: "rfid/scanned"   # Topic published by ESPHome readers
+  topic_action: "rfid/action"     # Topic subscribed to by Home Assistant
+  keepalive: 60
+  tls_enabled: false
+
+# ------------------------------------------------------------------------------
+# Audiobookshelf (ABS) Server Settings
+# ------------------------------------------------------------------------------
+audiobookshelf:
+  base_url: "http://192.168.1.50:13378" # Audiobookshelf server base URL
+  default_token: ""                     # Fallback/Admin API Token (if reader has no specific token)
+  timeout: 3.0                          # Mandatory timeout in seconds (prevents thread blocking)
+
+# ------------------------------------------------------------------------------
+# Media & Home Assistant Default Values
+# ------------------------------------------------------------------------------
+media:
+  # Sound or media URI played when an unconfigured/unknown tag is scanned
+  warning_sound_uri: "http://homeassistant.local:8123/local/sounds/tag_unknown.mp3"
+  default_volume: 20
+  # Integration mode:
+  # "mass" = Music Assistant (mass.play_media)
+  # "media_player" = Standard Home Assistant (media_player.play_media)
+  integration_mode: "mass"
+
+# ------------------------------------------------------------------------------
+# Web Server Settings
+# ------------------------------------------------------------------------------
+server:
+  host: "0.0.0.0"
+  port: 5000
+  log_level: "INFO"

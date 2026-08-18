@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NFC Media Controller</title>
+    <meta name="description" content="RFID/NFC Middleware für ESPHome, Audiobookshelf & Home Assistant">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+    <!-- Header Navigation -->
+    <header class="app-header">
+        <div class="header-container">
+            <div class="brand">
+                <div class="logo-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/>
+                        <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
+                        <path d="M4 4a16 16 0 0 1 16 0"/>
+                    </svg>
+                </div>
+                <div class="brand-text">
+                    <h1>NFC Media Controller</h1>
+                    <span class="version-badge">v{{ version }}</span>
+                </div>
+            </div>
+
+            <div class="header-status">
+                <div id="status-mqtt" class="status-indicator status-disconnected" title="MQTT Broker Verbindung">
+                    <span class="dot"></span>
+                    <span class="label">MQTT: Verbinde...</span>
+                </div>
+                <div id="status-abs" class="status-indicator status-unknown" title="Audiobookshelf Status">
+                    <span class="dot"></span>
+                    <span class="label">ABS: Prüfe...</span>
+                </div>
+                <div id="status-ws" class="status-indicator status-disconnected" title="WebSocket Live-Feed">
+                    <span class="dot"></span>
+                    <span class="label">Live</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <main class="app-main">
+        
+        <!-- Live Scan Banner (wird bei RFID-Scan hervorgehoben) -->
+        <section id="live-scan-banner" class="live-banner hidden">
+            <div class="live-banner-content">
+                <div class="live-pulse"></div>
+                <div class="live-info">
+                    <span class="live-tag-type" id="live-event-type">EVENT</span>
+                    <strong id="live-tag-name">Tag gescannt</strong>
+                    <span class="live-details" id="live-event-details">Details...</span>
+                </div>
+                <button id="live-banner-edit-btn" class="btn btn-sm btn-primary">Konfigurieren</button>
+            </div>
+        </section>
+
+        <!-- Navigation Tabs -->
+        <nav class="nav-tabs">
+            <button class="tab-btn active" data-tab="tags-tab">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+                NFC-Tags (<span id="tags-count">0</span>)
+            </button>
+            <button class="tab-btn" data-tab="readers-tab">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+                Reader & Zonen (<span id="readers-count">0</span>)
+            </button>
+            <button class="tab-btn" data-tab="history-tab">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                Live-Historie
+            </button>
+            <button class="tab-btn" data-tab="tools-tab">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+                Test-Simulator & ABS
+            </button>
+        </nav>
+
+        <!-- ===================================================================
+             TAB 1: TAGS VERWALTUNG
+             =================================================================== -->
+        <section id="tags-tab" class="tab-pane active">
+            <div class="section-toolbar">
+                <div class="search-box">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    <input type="text" id="tags-search-input" placeholder="Nach ID, Alias oder Aktion filtern...">
+                </div>
+
+                <div class="filter-group">
+                    <select id="tags-filter-status" class="form-select">
+                        <option value="all">Alle Tags</option>
+                        <option value="unconfigured">⚠️ Unkonfiguriert (Achtung)</option>
+                        <option value="configured">✅ Konfiguriert</option>
+                    </select>
+
+                    <select id="tags-filter-type" class="form-select">
+                        <option value="all">Alle Typen</option>
+                        <option value="Serie">Serie (Audiobookshelf)</option>
+                        <option value="Hoerbuch">Hörbuch</option>
+                        <option value="Playlist">Playlist</option>
+                        <option value="Licht">Licht</option>
+                        <option value="Szene">Szene</option>
+                    </select>
+
+                    <button id="btn-add-tag" class="btn btn-primary">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                        Tag manuell anlegen
+                    </button>
+                </div>
+            </div>
+
+            <!-- Tags Table -->
+            <div class="table-container">
+                <table class="data-table" id="tags-table">
+                    <thead>
+                        <tr>
+                            <th>Status</th>
+                            <th>Tag ID</th>
+                            <th>Alias</th>
+                            <th>Aktionstyp</th>
+                            <th>Ziel (Target ID)</th>
+                            <th>Lautstärke</th>
+                            <th>Zufall</th>
+                            <th>Zuletzt gescannt</th>
+                            <th class="text-right">Aktionen</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tags-table-body">
+                        <!-- Wird via JavaScript befüllt -->
+                    </tbody>
+                </table>
+                <div id="tags-empty-state" class="empty-state hidden">
+                    <p>Keine RFID/NFC-Tags gefunden. Scanne einen Tag am Reader oder lege manuell einen an.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===================================================================
+             TAB 2: READER & ZONEN VERWALTUNG
+             =================================================================== -->
+        <section id="readers-tab" class="tab-pane">
+            <div class="section-toolbar">
+                <p class="section-desc">
+                    Verbinde deine ESPHome-Reader (z. B. <code>reader_kizi</code>) mit den entsprechenden Home Assistant Media-Playern und ABS-Nutzer-Tokens.
+                </p>
+                <button id="btn-add-reader" class="btn btn-primary">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    Reader hinzufügen
+                </button>
+            </div>
+
+            <div class="table-container">
+                <table class="data-table" id="readers-table">
+                    <thead>
+                        <tr>
+                            <th>Reader ID (ESPHome)</th>
+                            <th>Ziel-Player (Home Assistant)</th>
+                            <th>ABS User-Token</th>
+                            <th>Notizen / Raum</th>
+                            <th class="text-right">Aktionen</th>
+                        </tr>
+                    </thead>
+                    <tbody id="readers-table-body">
+                        <!-- Wird via JavaScript befüllt -->
+                    </tbody>
+                </table>
+                <div id="readers-empty-state" class="empty-state hidden">
+                    <p>Noch keine Reader registriert. Lege deinen ersten Reader an (z. B. <code>reader_kizi</code> -> <code>media_player.kinderzimmer</code>).</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===================================================================
+             TAB 3: LIVE HISTORIE
+             =================================================================== -->
+        <section id="history-tab" class="tab-pane">
+            <div class="section-toolbar">
+                <p class="section-desc">Echtzeit-Protokoll der letzten 50 NFC-Events und Aktionen.</p>
+                <button id="btn-refresh-history" class="btn btn-secondary btn-sm">Aktualisieren</button>
+            </div>
+
+            <div class="table-container">
+                <table class="data-table" id="history-table">
+                    <thead>
+                        <tr>
+                            <th>Zeitpunkt</th>
+                            <th>Status</th>
+                            <th>Tag ID / Alias</th>
+                            <th>Reader</th>
+                            <th>Ausgeführte Aktion</th>
+                            <th>MQTT Payload</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-table-body">
+                        <!-- Wird via JavaScript befüllt -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ===================================================================
+             TAB 4: TEST-SIMULATOR & ABS BROWSER
+             =================================================================== -->
+        <section id="tools-tab" class="tab-pane">
+            <div class="grid-2-col">
+                
+                <!-- RFID Scanner Simulator -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3>RFID Test-Simulator</h3>
+                        <span class="badge badge-info">Hardware-Simulation</span>
+                    </div>
+                    <div class="card-body">
+                        <p class="card-desc">Simuliere RFID-Scans direkt im Browser, um die MQTT-Logik ohne physische Tags zu testen.</p>
+                        
+                        <form id="simulator-form">
+                            <div class="form-group">
+                                <label for="sim-reader-id">Reader ID:</label>
+                                <input type="text" id="sim-reader-id" class="form-input" placeholder="z. B. reader_kizi" required>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="sim-tag-id">Tag ID:</label>
+                                <input type="text" id="sim-tag-id" class="form-input font-mono" placeholder="z. B. 04A1B2C3D4" required>
+                            </div>
+
+                            <div class="form-actions">
+                                <button type="button" id="btn-sim-scan" class="btn btn-success">
+                                    ▶ Auflegen (scanned)
+                                </button>
+                                <button type="button" id="btn-sim-remove" class="btn btn-danger">
+                                    ⏹ Entfernen (removed)
+                                </button>
+                            </div>
+                        </form>
+
+                        <div class="sim-result-box hidden" id="sim-result-container">
+                            <label>Simulations-Ergebnis:</label>
+                            <pre id="sim-result-output" class="code-block"></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Audiobookshelf Explorer -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Audiobookshelf Serien-Explorer</h3>
+                        <span class="badge badge-primary">API Browser</span>
+                    </div>
+                    <div class="card-body">
+                        <p class="card-desc">Durchsuche deine Audiobookshelf-Bibliotheken und kopiere Serien-IDs mit einem Klick.</p>
+                        
+                        <div class="form-group">
+                            <div class="input-with-btn">
+                                <button id="btn-load-abs-series" class="btn btn-secondary w-100">
+                                    🔄 Serien aus Audiobookshelf laden
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="abs-series-list" class="abs-list-container">
+                            <p class="text-muted text-center py-4">Klicke oben, um Serien abzurufen.</p>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+    </main>
+
+    <!-- =======================================================================
+         MODAL: TAG EDITIEREN / ERSTELLEN
+         ======================================================================= -->
+    <div id="tag-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3 id="tag-modal-title">Tag konfigurieren</h3>
+                <button class="modal-close" data-close-modal>&times;</button>
+            </div>
+            <form id="tag-form">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="tag-id-input">Tag ID <span class="required">*</span></label>
+                        <input type="text" id="tag-id-input" class="form-input font-mono" placeholder="z. B. 04A1B2C3D4" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="tag-alias-input">Name / Alias <span class="required">*</span></label>
+                        <input type="text" id="tag-alias-input" class="form-input" placeholder="z. B. Die drei ??? Kids (Folge 1-100)" required>
+                    </div>
+
+                    <div class="form-row-2">
+                        <div class="form-group">
+                            <label for="tag-action-type">Aktionstyp <span class="required">*</span></label>
+                            <select id="tag-action-type" class="form-select" required>
+                                <option value="">-- Typ wählen --</option>
+                                <option value="Serie">Serie (Audiobookshelf dynamisch)</option>
+                                <option value="Hoerbuch">Hörbuch (Einzelner Track / Album)</option>
+                                <option value="Playlist">Playlist</option>
+                                <option value="Licht">Lichtsteuerung</option>
+                                <option value="Szene">Szene</option>
+                                <option value="Custom">Benutzerdefiniert</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="tag-volume">Lautstärke (%)</label>
+                            <input type="number" id="tag-volume" class="form-input" min="0" max="100" placeholder="Standard: 20">
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="tag-target-id">
+                            Ziel-ID (Target ID) <span class="required">*</span>
+                            <small class="helper-text" id="target-id-helper">ABS Serien-ID, Medien-URI oder Entität</small>
+                        </label>
+                        <div class="input-with-btn">
+                            <input type="text" id="tag-target-id" class="form-input font-mono" placeholder="z. B. ser_abc123 oder mass://track/xyz" required>
+                            <button type="button" id="btn-pick-abs-series" class="btn btn-secondary btn-sm" title="Aus ABS wählen">
+                                ABS Serien
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="tag-random">
+                            <span>Zufallswiedergabe (Random / Shuffle)</span>
+                        </label>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="tag-extra-params">Zusatz-Parameter (JSON)</label>
+                        <textarea id="tag-extra-params" class="form-textarea font-mono" rows="2" placeholder='{"brightness": 200, "color_name": "blue"}'></textarea>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-close-modal>Abbrechen</button>
+                    <button type="submit" class="btn btn-primary">Speichern</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- =======================================================================
+         MODAL: READER EDITIEREN / ERSTELLEN
+         ======================================================================= -->
+    <div id="reader-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3 id="reader-modal-title">Reader konfigurieren</h3>
+                <button class="modal-close" data-close-modal>&times;</button>
+            </div>
+            <form id="reader-form">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="reader-id-input">Reader ID (ESPHome MQTT) <span class="required">*</span></label>
+                        <input type="text" id="reader-id-input" class="form-input font-mono" placeholder="z. B. reader_kizi" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="reader-target-player">Ziel-Player (Home Assistant) <span class="required">*</span></label>
+                        <input type="text" id="reader-target-player" class="form-input font-mono" placeholder="z. B. media_player.kinderzimmer" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="reader-abs-token">
+                            Audiobookshelf User-Token (Optional)
+                            <small class="helper-text">Für nutzerspezifischen Hörfortschritt dieses Zimmers</small>
+                        </label>
+                        <input type="password" id="reader-abs-token" class="form-input font-mono" placeholder="abs_user_token_hier">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="reader-notes">Notizen / Raum</label>
+                        <input type="text" id="reader-notes" class="form-input" placeholder="z. B. Kinderzimmer Jonas (Regal)">
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-close-modal>Abbrechen</button>
+                    <button type="submit" class="btn btn-primary">Speichern</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

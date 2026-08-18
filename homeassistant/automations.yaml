@@ -1,0 +1,132 @@
+# ==============================================================================
+# Home Assistant Automation: NFC Media Controller Handler
+# ==============================================================================
+# Listens to MQTT topic 'rfid/action' and executes playback/stop commands.
+
+- id: "nfc_media_controller_action_handler"
+  alias: "NFC Controller: MQTT Action Handler"
+  description: "Executes media playback, lighting, or stop actions received from NFC Middleware."
+  mode: queued
+  max: 10
+  trigger:
+    - platform: mqtt
+      topic: "rfid/action"
+  action:
+    - variables:
+        data: "{{ trigger.payload_json }}"
+        status: "{{ data.status | default('') }}"
+        action_type: "{{ data.action_type | default('') }}"
+        target_player: "{{ data.target_player | default('') }}"
+        target_id: "{{ data.target_id | default('') }}"
+        volume: "{{ data.volume | default(none) }}"
+        random_flag: "{{ data.random | default(false) }}"
+        extra_params: "{{ data.extra_params | default({}) }}"
+
+    - choose:
+        # ----------------------------------------------------------------------
+        # CONDITION A: Stop on Tag Removal (Toniebox logic)
+        # ----------------------------------------------------------------------
+        - conditions:
+            - condition: template
+              value_template: "{{ status == 'removed' or action_type == 'stop' }}"
+            - condition: template
+              value_template: "{{ target_player != '' }}"
+          sequence:
+            - service: media_player.media_stop
+              target:
+                entity_id: "{{ target_player }}"
+
+        # ----------------------------------------------------------------------
+        # CONDITION B: Warning Sound on New / Unconfigured Tag
+        # ----------------------------------------------------------------------
+        - conditions:
+            - condition: template
+              value_template: "{{ action_type == 'warning' }}"
+          sequence:
+            - choose:
+                - conditions:
+                    - condition: template
+                      value_template: "{{ volume is not none and volume != '' }}"
+                  sequence:
+                    - service: media_player.volume_set
+                      target:
+                        entity_id: "{{ target_player }}"
+                      data:
+                        volume_level: "{{ (volume | float) / 100 }}"
+            - service: media_player.play_media
+              target:
+                entity_id: "{{ target_player }}"
+              data:
+                media_content_id: "{{ target_id }}"
+                media_content_type: "music"
+
+        # ----------------------------------------------------------------------
+        # CONDITION C: Media Playback (Music Assistant / Media Player)
+        # ----------------------------------------------------------------------
+        - conditions:
+            - condition: template
+              value_template: "{{ action_type == 'media' }}"
+            - condition: template
+              value_template: "{{ target_player != '' and target_id != '' }}"
+          sequence:
+            # 1. Set volume if provided
+            - choose:
+                - conditions:
+                    - condition: template
+                      value_template: "{{ volume is not none and volume != '' }}"
+                  sequence:
+                    - service: media_player.volume_set
+                      target:
+                        entity_id: "{{ target_player }}"
+                      data:
+                        volume_level: "{{ (volume | float) / 100 }}"
+
+            # 2. Start playback via Music Assistant (if installed) or standard media_player
+            - choose:
+                # Option A: Music Assistant (mass.play_media)
+                - conditions:
+                    - condition: template
+                      value_template: "{{ is_state_attr('update.music_assistant', 'installed', true) or target_id.startswith('mass:') or target_id.startswith('audiobookshelf:') }}"
+                  sequence:
+                    - service: mass.play_media
+                      target:
+                        entity_id: "{{ target_player }}"
+                      data:
+                        media_id: "{{ target_id }}"
+                        media_type: "track"
+                        radio_mode: "{{ random_flag }}"
+              # Fallback Option B: Standard Home Assistant media_player.play_media
+              default:
+                - service: media_player.play_media
+                  target:
+                    entity_id: "{{ target_player }}"
+                  data:
+                    media_content_id: "{{ target_id }}"
+                    media_content_type: "music"
+
+        # ----------------------------------------------------------------------
+        # CONDITION D: Light Control
+        # ----------------------------------------------------------------------
+        - conditions:
+            - condition: template
+              value_template: "{{ action_type == 'light' }}"
+            - condition: template
+              value_template: "{{ target_id != '' or target_player != '' }}"
+          sequence:
+            - service: light.turn_on
+              target:
+                entity_id: "{{ target_id if target_id != '' else target_player }}"
+              data: "{{ extra_params }}"
+
+        # ----------------------------------------------------------------------
+        # CONDITION E: Scene Activation
+        # ----------------------------------------------------------------------
+        - conditions:
+            - condition: template
+              value_template: "{{ action_type == 'scene' }}"
+            - condition: template
+              value_template: "{{ target_id != '' }}"
+          sequence:
+            - service: scene.turn_on
+              target:
+                entity_id: "{{ target_id }}"

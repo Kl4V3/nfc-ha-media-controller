@@ -1,0 +1,27 @@
+services:
+  nfc-media-controller:
+    image: theklave/nfc-ha-media-controller:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nfc_media_controller
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      # Optional: Kann auch in ./data/config.yaml definiert werden
+      - TZ=Europe/Berlin
+      - MQTT_BROKER=192.168.1.50
+      - MQTT_PORT=1883
+      - MQTT_USER=nfc_user
+      - MQTT_PASSWORD=secret_password
+      - ABS_BASE_URL=http://192.168.1.50:13378
+      - ABS_DEFAULT_TOKEN=your_abs_token_here
+      - LOG_LEVEL=INFO
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/system/status"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

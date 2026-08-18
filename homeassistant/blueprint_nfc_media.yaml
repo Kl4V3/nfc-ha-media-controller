@@ -1,0 +1,72 @@
+blueprint:
+  name: "NFC Media Controller Handler"
+  description: "Executes actions published over MQTT by the Docker NFC Media Controller."
+  domain: automation
+  input:
+    mqtt_topic:
+      name: MQTT Action Topic
+      description: "Topic on which the middleware publishes actions."
+      default: "rfid/action"
+
+trigger:
+  - platform: mqtt
+    topic: !input mqtt_topic
+
+action:
+  - variables:
+      data: "{{ trigger.payload_json }}"
+      status: "{{ data.status | default('') }}"
+      action_type: "{{ data.action_type | default('') }}"
+      target_player: "{{ data.target_player | default('') }}"
+      target_id: "{{ data.target_id | default('') }}"
+      volume: "{{ data.volume | default(none) }}"
+      random_flag: "{{ data.random | default(false) }}"
+      extra_params: "{{ data.extra_params | default({}) }}"
+
+  - choose:
+      # Stop
+      - conditions:
+          - condition: template
+            value_template: "{{ status == 'removed' or action_type == 'stop' }}"
+          - condition: template
+            value_template: "{{ target_player != '' }}"
+        sequence:
+          - service: media_player.media_stop
+            target:
+              entity_id: "{{ target_player }}"
+
+      # Warning
+      - conditions:
+          - condition: template
+            value_template: "{{ action_type == 'warning' }}"
+        sequence:
+          - service: media_player.play_media
+            target:
+              entity_id: "{{ target_player }}"
+            data:
+              media_content_id: "{{ target_id }}"
+              media_content_type: "music"
+
+      # Media Play
+      - conditions:
+          - condition: template
+            value_template: "{{ action_type == 'media' }}"
+          - condition: template
+            value_template: "{{ target_player != '' and target_id != '' }}"
+        sequence:
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ volume is not none and volume != '' }}"
+                sequence:
+                  - service: media_player.volume_set
+                    target:
+                      entity_id: "{{ target_player }}"
+                    data:
+                      volume_level: "{{ (volume | float) / 100 }}"
+          - service: media_player.play_media
+            target:
+              entity_id: "{{ target_player }}"
+            data:
+              media_content_id: "{{ target_id }}"
+              media_content_type: "music"
