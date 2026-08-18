@@ -5,6 +5,7 @@ import threading
 from typing import Dict, Any, Callable, Optional, List
 import paho.mqtt.client as mqtt
 
+from app import __version__
 from app.config import AppConfig
 from app.database import (
     get_reader_by_id,
@@ -118,7 +119,7 @@ class MQTTService:
                 "name": "NFC Media Controller",
                 "model": "NFC HA Middleware",
                 "manufacturer": "theklave",
-                "sw_version": "1.0.1"
+                "sw_version": __version__
             }
 
             # 1. Sensor: Letzter gescannter Titel / Tag
@@ -353,7 +354,14 @@ class MQTTService:
             if not (target_id.startswith("audiobookshelf://") or target_id.startswith("mass://") or target_id.startswith("http")):
                 target_id = f"audiobookshelf://track/{target_id}"
 
-        # 4c. Playlist (Music Assistant)
+        # 4c. Album (Music Assistant)
+        elif normalized_action in ["album"]:
+            action_type_out = "media"
+            media_type = "album"
+            if not (target_id.startswith("mass://") or target_id.startswith("spotify://") or target_id.startswith("http")):
+                target_id = f"mass://album/{target_id}"
+
+        # 4d. Playlist (Music Assistant)
         elif normalized_action in ["playlist"]:
             action_type_out = "media"
             media_type = "playlist"

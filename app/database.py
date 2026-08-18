@@ -149,7 +149,7 @@ def auto_discover_or_update_tag(db_path: str, tag_id: str) -> Dict[str, Any]:
         with conn:
             cursor = conn.execute("SELECT * FROM tags WHERE tag_id = ?", (tag_id,))
             row = cursor.fetchone()
-            now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
 
             if not row:
                 # Neu anlegen (Auto-Discovery)
@@ -210,7 +210,7 @@ def upsert_tag(db_path: str, tag_data: Dict[str, Any]) -> Dict[str, Any]:
     else:
         extra_params_str = "{}"
 
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
 
     try:
         with conn:

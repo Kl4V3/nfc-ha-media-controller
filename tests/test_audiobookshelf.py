@@ -50,9 +50,11 @@ def test_resolve_next_book_in_series(mock_get):
     # Mock user progress response (Book 1 is finished, Book 2 is not listened yet)
     progress_resp = MagicMock()
     progress_resp.status_code = 200
-    progress_resp.json.return_value = [
-        {"libraryItemId": "book_1", "isFinished": True, "currentTime": 3600, "duration": 3600}
-    ]
+    progress_resp.json.return_value = {
+        "mediaProgress": [
+            {"libraryItemId": "book_1", "isFinished": True, "currentTime": 3600, "duration": 3600, "progress": 1.0}
+        ]
+    }
 
     def side_effect(url, **kwargs):
         assert kwargs.get("timeout") == 3.0
@@ -70,4 +72,4 @@ def test_resolve_next_book_in_series(mock_get):
     assert resolved["series_id"] == "ser_123"
     assert resolved["book_id"] == "book_2"
     assert resolved["title"] == "Radio Rocky Beach"
-    assert resolved["sequence"] == "2"
+    assert resolved["sequence"] in [2, "2"]

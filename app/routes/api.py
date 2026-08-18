@@ -232,3 +232,70 @@ def system_status(request: Request):
             "path": config.database_path
         }
     }
+
+
+@api_router.get("/system/logs")
+def get_system_logs(request: Request):
+    """Liefert die letzten Log-Zeilen des Servers."""
+    log_buf = getattr(request.app.state, "log_buffer", None)
+    if log_buf:
+        return {"logs": log_buf.get_logs()}
+    return {"logs": ["Kein Log-Buffer aktiv."]}
+
+
+class AbsDebugRequest(BaseModel):
+    series_id: str
+    library_id: Optional[str] = ""
+    user_token: Optional[str] = ""
+
+
+@api_router.post("/debug/abs-series")
+def debug_abs_series(req_data: AbsDebugRequest, request: Request):
+    """Führt eine detaillierte ABS-Diagnose für eine Serie und einen Token aus."""
+    abs_client = request.app.state.abs_client
+    token = req_data.user_token.strip() if req_data.user_token else None
+    series_id = req_data.series_id.strip()
+    library_id = req_data.library_id.strip() if req_data.library_id else None
+
+    # 1. Verbindung und User-Check
+    auth_info = abs_client.test_connection(user_token=token)
+
+    # 2. Serien-Details
+    series_details = abs_client.get_series_details(series_id, library_id=library_id, user_token=token)
+
+    # 3. User Progress
+    progress_map = abs_client.get_user_progress(user_token=token)
+
+    # 4. Auflösung
+    resolution = abs_client.resolve_next_book_in_series(series_id, library_id=library_id, user_token=token)
+
+    books_breakdown = []
+    if series_details:
+        raw_books = series_details.get("books") or series_details.get("libraryItems") or series_details.get("items") or []
+        for b in raw_books:
+            b_id = str(b.get("id") or b.get("libraryItemId") or "")
+            m_id = str(b.get("media", {}).get("id") or "") if isinstance(b.get("media"), dict) else ""
+            b_title = b.get("media", {}).get("metadata", {}).get("title") or b.get("title") or b.get("name") or b_id
+            seq_val = abs_client._extract_sequence(b, series_id)
+            prog = progress_map.get(b_id) or (progress_map.get(m_id) if m_id else None)
+            
+            books_breakdown.append({
+                "id": b_id,
+                "media_id": m_id,
+                "title": b_title,
+                "sequence": seq_val,
+                "has_progress_entry": prog is not None,
+                "progress_details": prog
+            })
+
+    return {
+        "auth_user": auth_info,
+        "series_id": series_id,
+        "library_id": library_id,
+        "series_found": series_details is not None,
+        "series_name": series_details.get("name") if series_details else None,
+        "total_books_found": len(books_breakdown),
+        "total_user_progress_entries": len(progress_map),
+        "resolution_result": resolution,
+        "books": books_breakdown
+    }

@@ -84,6 +84,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const elPayloadModalContent = document.getElementById('payload-modal-content');
     const btnCopyPayloadModal = document.getElementById('btn-copy-payload-modal');
 
+    const elLogsModal = document.getElementById('logs-modal');
+    const btnOpenLogs = document.getElementById('btn-open-logs');
+    const elSystemLogsContent = document.getElementById('system-logs-content');
+    const btnRefreshLogs = document.getElementById('btn-refresh-logs');
+    const btnCopyLogs = document.getElementById('btn-copy-logs');
+
     // DOM Elements - Simulator & ABS Tab
     const inputSimReaderId = document.getElementById('sim-reader-id');
     const inputSimTagId = document.getElementById('sim-tag-id');
@@ -126,6 +132,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (elTagModal) elTagModal.classList.add('hidden');
             if (elReaderModal) elReaderModal.classList.add('hidden');
             if (elPayloadModal) elPayloadModal.classList.add('hidden');
+            if (elLogsModal) elLogsModal.classList.add('hidden');
         });
     });
 
@@ -134,6 +141,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (elTagModal) elTagModal.classList.add('hidden');
             if (elReaderModal) elReaderModal.classList.add('hidden');
             if (elPayloadModal) elPayloadModal.classList.add('hidden');
+            if (elLogsModal) elLogsModal.classList.add('hidden');
         });
     });
 
@@ -154,6 +162,13 @@ document.addEventListener('DOMContentLoaded', () => {
             inputTagTargetId.placeholder = '5dcb6e5d-962d-434f-b26d-60a6a8cc30f8';
             btnToggleModalAbsPicker.classList.remove('hidden');
             btnToggleModalAbsPicker.textContent = '🎧 In ABS suchen';
+        } else if (val === 'Album') {
+            if (groupLibraryId) groupLibraryId.classList.add('hidden');
+            if (inputTagLibraryId) { inputTagLibraryId.required = false; inputTagLibraryId.value = ''; }
+            elTargetIdHelper.textContent = 'Music Assistant Album (z. B. mass://album/xyz oder Spotify/Tidal Album-URI).';
+            inputTagTargetId.placeholder = 'mass://album/mein_album';
+            btnToggleModalAbsPicker.classList.add('hidden');
+            elModalAbsPickerBox.classList.add('hidden');
         } else if (val === 'Playlist') {
             if (groupLibraryId) groupLibraryId.classList.add('hidden');
             if (inputTagLibraryId) { inputTagLibraryId.required = false; inputTagLibraryId.value = ''; }
@@ -547,6 +562,47 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         elPayloadModal.classList.remove('hidden');
     };
+
+    // System Logs Viewer
+    async function loadSystemLogs() {
+        if (!elSystemLogsContent) return;
+        elSystemLogsContent.textContent = 'Lade Server-Logs...';
+        try {
+            const res = await fetch('/api/system/logs');
+            if (res.ok) {
+                const data = await res.json();
+                elSystemLogsContent.textContent = (data.logs || []).join('\n') || 'Keine Logs vorhanden.';
+                elSystemLogsContent.scrollTop = elSystemLogsContent.scrollHeight;
+            } else {
+                elSystemLogsContent.textContent = 'Fehler beim Laden der Logs (HTTP ' + res.status + ')';
+            }
+        } catch (e) {
+            elSystemLogsContent.textContent = 'Netzwerkfehler: ' + e;
+        }
+    }
+
+    if (btnOpenLogs) {
+        btnOpenLogs.addEventListener('click', () => {
+            if (elLogsModal) elLogsModal.classList.remove('hidden');
+            loadSystemLogs();
+        });
+    }
+
+    if (btnRefreshLogs) {
+        btnRefreshLogs.addEventListener('click', loadSystemLogs);
+    }
+
+    if (btnCopyLogs) {
+        btnCopyLogs.addEventListener('click', () => {
+            if (elSystemLogsContent && elSystemLogsContent.textContent) {
+                navigator.clipboard.writeText(elSystemLogsContent.textContent).then(() => {
+                    alert('Logs in Zwischenablage kopiert! ✅');
+                }).catch(err => {
+                    console.error('Kopieren fehlgeschlagen:', err);
+                });
+            }
+        });
+    }
 
     // Filter listeners
     elSearchInput.addEventListener('input', renderTagsTable);
@@ -959,10 +1015,16 @@ document.addEventListener('DOMContentLoaded', () => {
     function formatDate(dateStr) {
         if (!dateStr) return '';
         try {
-            const d = new Date(dateStr);
+            let s = String(dateStr).trim();
+            // Wenn der String ein SQLite UTC Format ohne Zeitzone ist (z. B. "2026-08-18 23:03:12"),
+            // fügen wir T und Z an, damit der Browser ihn korrekt in die lokale Zeitzone (Berlin) umrechnet.
+            if (!s.endsWith('Z') && !s.includes('+') && !s.includes('-', 11)) {
+                s = s.replace(' ', 'T') + 'Z';
+            }
+            const d = new Date(s);
             if (isNaN(d.getTime())) return dateStr;
-            return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + 
-                   ' ' + d.toLocaleDateString([], { day: '2-digit', month: '2-digit' });
+            return d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + 
+                   ' ' + d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
         } catch (e) {
             return dateStr;
         }

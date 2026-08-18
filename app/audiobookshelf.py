@@ -142,17 +142,52 @@ class AudiobookshelfClient:
             return None
 
     def get_series_details(self, series_id: str, library_id: Optional[str] = None, user_token: Optional[str] = None) -> Optional[Dict[str, Any]]:
-        """Ruft direkt und ressourcenschonend nur die Details dieser Serie ab (1 gezielter HTTP-Aufruf)."""
-        # 1. Direkter Aufruf über Library-ID (schnellster Pfad)
+        """Ruft direkt und zielgerichtet die Bücher einer Serie ab (1-2 gezielte HTTP-Aufrufe)."""
+        import base64
+
+        # 1. Direkter Aufruf über Library-ID
         if library_id:
+            # 1a. /api/libraries/{lib_id}/series/{series_id}
             url = f"{self.base_url}/api/libraries/{library_id}/series/{series_id}"
             try:
                 resp = requests.get(url, headers=self._get_headers(user_token), timeout=self.timeout)
                 if resp.status_code == 200:
                     data = resp.json()
-                    return data.get("series") or data
+                    series_obj = data.get("series") or data
+                    books = series_obj.get("books") or series_obj.get("libraryItems") or []
+                    if books:
+                        return series_obj
             except Exception as e:
                 logger.debug(f"Direkte Bibliotheksabfrage {url} fehlgeschlagen: {e}")
+
+            # 1b. ABS Web-UI Filter-Methode: /api/libraries/{lib_id}/items?filter=series.<base64_id>
+            try:
+                b64_id = base64.b64encode(series_id.encode()).decode()
+                url_filter = f"{self.base_url}/api/libraries/{library_id}/items?filter=series.{b64_id}&limit=100"
+                resp = requests.get(url_filter, headers=self._get_headers(user_token), timeout=self.timeout)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    raw_items = data.get("results", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+                    if raw_items:
+                        series_name = "Serie"
+                        for item in raw_items:
+                            # Suche Seriennamen in Metadaten
+                            item_series = item.get("media", {}).get("metadata", {}).get("series") or []
+                            if isinstance(item_series, list):
+                                for s_entry in item_series:
+                                    if isinstance(s_entry, dict) and (s_entry.get("id") == series_id or s_entry.get("name")):
+                                        series_name = s_entry.get("name", series_name)
+                                        # Sequenz auf Root-Ebene für Sortierung
+                                        item["sequence"] = s_entry.get("sequence", item.get("sequence"))
+                                        break
+                        logger.info(f"ABS-Filterabfrage für Serie '{series_name}' ({series_id}) erfolgreich: {len(raw_items)} Bücher gefunden.")
+                        return {
+                            "id": series_id,
+                            "name": series_name,
+                            "books": raw_items
+                        }
+            except Exception as e:
+                logger.debug(f"ABS Filter-Abfrage {url_filter} fehlgeschlagen: {e}")
 
         # 2. Direkter Aufruf über /api/series/{series_id}
         url = f"{self.base_url}/api/series/{series_id}"
@@ -169,28 +204,98 @@ class AudiobookshelfClient:
     def get_user_progress(self, user_token: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
         """
         Ruft den Hörfortschritt des Nutzers ab.
-        Gibt ein Dictionary gemappt nach libraryItemId zurück.
+        Gibt ein Dictionary gemappt nach libraryItemId und mediaItemId zurück.
         """
         url = f"{self.base_url}/api/me/progress"
         progress_map = {}
+        user_name = "Default-Key"
         try:
+            # Ermittle Benutzername für transparentes Logging
+            auth_info = self.test_connection(user_token)
+            if auth_info.get("success") and auth_info.get("username"):
+                user_name = auth_info.get("username")
+
             resp = requests.get(url, headers=self._get_headers(user_token), timeout=self.timeout)
             if resp.status_code == 200:
-                items = resp.json()
-                if isinstance(items, list):
-                    for prog in items:
-                        item_id = prog.get("libraryItemId") or prog.get("id")
-                        if item_id:
-                            progress_map[item_id] = prog
-                elif isinstance(items, dict):
-                    prog_list = items.get("libraryItemProgress") or items.get("mediaItemProgress") or items.get("results") or []
-                    for prog in prog_list:
-                        item_id = prog.get("libraryItemId") or prog.get("id")
-                        if item_id:
-                            progress_map[item_id] = prog
+                data = resp.json()
+                prog_list = []
+                if isinstance(data, list):
+                    prog_list = data
+                elif isinstance(data, dict):
+                    prog_list = (
+                        data.get("mediaProgress")
+                        or data.get("libraryItemProgress")
+                        or data.get("mediaItemProgress")
+                        or data.get("results")
+                        or []
+                    )
+                for prog in prog_list:
+                    for key in ["libraryItemId", "id", "mediaItemId"]:
+                        val = prog.get(key)
+                        if val:
+                            progress_map[str(val)] = prog
+                logger.info(f"Hörfortschritt von ABS für Nutzer '{user_name}' geladen ({len(progress_map)} Medien-Referenzen).")
         except Exception as e:
             logger.warning(f"Konnte Hörfortschritt nicht abrufen: {e}")
         return progress_map
+
+    def _extract_sequence(self, item: Dict[str, Any], series_id: Optional[str] = None) -> Optional[float]:
+        """Extrahiert die Folgen-/Sequenznummer eines Buchs aus allen ABS-Feldern und Titeln."""
+        import re
+
+        # 1. Direkte sequence Felder
+        seq = item.get("sequence")
+        if seq is not None and str(seq).strip() != "":
+            try:
+                return float(str(seq).replace(",", "."))
+            except (ValueError, TypeError):
+                pass
+
+        media = item.get("media", {}) if isinstance(item.get("media"), dict) else {}
+        metadata = media.get("metadata", {}) if isinstance(media.get("metadata"), dict) else {}
+
+        # 2. metadata.series Einträge (Liste oder Dict)
+        series_entries = metadata.get("series") or []
+        if isinstance(series_entries, dict):
+            series_entries = [series_entries]
+        if isinstance(series_entries, list):
+            for s in series_entries:
+                if isinstance(s, dict):
+                    s_id = s.get("id") or s.get("seriesId")
+                    if not series_id or s_id == series_id or len(series_entries) == 1:
+                        s_seq = s.get("sequence")
+                        if s_seq is not None and str(s_seq).strip() != "":
+                            try:
+                                return float(str(s_seq).replace(",", "."))
+                            except (ValueError, TypeError):
+                                pass
+
+        # 3. metadata.seriesSequence / metadata.sequence
+        for key in ["seriesSequence", "sequence", "trackNum", "discNum"]:
+            val = metadata.get(key)
+            if val is not None and str(val).strip() != "":
+                try:
+                    return float(str(val).replace(",", "."))
+                except (ValueError, TypeError):
+                    pass
+
+        # 4. Aus dem Titel per Regex extrahieren (z. B. "Folge 2: ...", "02 - ...", "Kids 02 ...", "#2")
+        title = metadata.get("title") or item.get("name") or item.get("title") or ""
+        m = re.search(r'(?:folge|episode|band|teil|nr\.?|#)\s*0*(\d+(?:[.,]\d+)?)', title, re.IGNORECASE)
+        if m:
+            try:
+                return float(m.group(1).replace(",", "."))
+            except (ValueError, TypeError):
+                pass
+
+        m2 = re.match(r'^\s*0*(\d+)\s*[-:.\s]', title)
+        if m2:
+            try:
+                return float(m2.group(1))
+            except (ValueError, TypeError):
+                pass
+
+        return None
 
     def resolve_next_book_in_series(self, series_id: str, library_id: Optional[str] = None, user_token: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """
@@ -225,48 +330,79 @@ class AudiobookshelfClient:
             logger.warning(f"Keine Bücher in ABS-Serie '{series_id}' gefunden.")
             return None
 
-        # Sortiere nach sequence falls vorhanden
-        def sort_key(b):
-            seq = b.get("sequence")
-            if seq is not None:
-                try:
-                    return float(seq)
-                except (ValueError, TypeError):
-                    return 9999
-            return 9999
+        # Sequenz für jedes Buch berechnen und anhängen
+        for b in books:
+            seq_val = self._extract_sequence(b, series_id)
+            if seq_val is not None:
+                b["_seq_num"] = seq_val
+                b["sequence"] = int(seq_val) if seq_val.is_integer() else seq_val
+            else:
+                b["_seq_num"] = 9999
 
-        sorted_books = sorted(books, key=sort_key)
+        # Sortiere strikt nach Folgensequenz
+        sorted_books = sorted(books, key=lambda b: b.get("_seq_num", 9999))
 
         # Nutzer-Fortschritt abrufen
         progress_map = self.get_user_progress(user_token)
-        logger.info(f"Prüfe Fortschritt für {len(sorted_books)} Bücher in Serie '{series_data.get('name', 'Serie')}'...")
+        logger.info(f"--- Prüfe Fortschritt für Serie '{series_data.get('name', 'Serie')}' ({len(sorted_books)} Bücher gefunden) ---")
+
+        for idx, b in enumerate(sorted_books):
+            book_id = str(b.get("id") or b.get("libraryItemId") or "")
+            media_id = str(b.get("media", {}).get("id") or "") if isinstance(b.get("media"), dict) else ""
+            b_title = b.get("media", {}).get("metadata", {}).get("title") or b.get("title") or b.get("name") or book_id
+            prog = progress_map.get(book_id) or (progress_map.get(media_id) if media_id else None)
+            seq_display = b.get("sequence", "?")
+
+            if prog:
+                raw_is_fin = prog.get("isFinished")
+                is_fin_flag = str(raw_is_fin).lower() in ["true", "1"]
+                raw_prog = float(prog.get("progress") or 0)
+                # Normalisiere Fortschritt falls ABS Prozentwerte (0-100) statt (0-1) sendet
+                p_ratio = (raw_prog / 100.0) if raw_prog > 1.0 else raw_prog
+                c_time = float(prog.get("currentTime") or 0)
+                dur = float(prog.get("duration") or 0)
+                time_ratio = (c_time / dur) if dur > 0 else 0.0
+
+                is_done = is_fin_flag or p_ratio >= 0.98 or time_ratio >= 0.98
+                logger.info(f"  [{idx+1}] Folge {seq_display}: '{b_title}' -> {'BEENDET' if is_done else 'IN ARBEIT'} (isFinished={is_fin_flag}, prog={p_ratio:.1%}, time={c_time:.0f}/{dur:.0f}s)")
+            else:
+                logger.info(f"  [{idx+1}] Folge {seq_display}: '{b_title}' -> UNGEHÖRT (0%)")
 
         # Erstes unfertiges Buch suchen
         selected_book = None
         for b in sorted_books:
-            book_id = b.get("id") or b.get("libraryItemId")
-            prog = progress_map.get(book_id)
+            book_id = str(b.get("id") or b.get("libraryItemId") or "")
+            media_id = str(b.get("media", {}).get("id") or "") if isinstance(b.get("media"), dict) else ""
+            b_title = b.get("media", {}).get("metadata", {}).get("title") or b.get("title") or b.get("name") or book_id
+
+            prog = progress_map.get(book_id) or (progress_map.get(media_id) if media_id else None)
 
             if not prog:
                 # Noch nie gehört -> erstes ungespieltes Buch
                 selected_book = b
+                logger.info(f"-> Auswahl: Folge {b.get('sequence', '?')} ('{b_title}') [Noch nie gehört]")
                 break
 
-            is_finished = prog.get("isFinished", False)
+            raw_is_fin = prog.get("isFinished")
+            is_finished = str(raw_is_fin).lower() in ["true", "1"]
+            raw_prog = float(prog.get("progress") or 0)
+            progress_ratio = (raw_prog / 100.0) if raw_prog > 1.0 else raw_prog
             current_time = float(prog.get("currentTime") or 0)
             duration = float(prog.get("duration") or 0)
-            progress_ratio = float(prog.get("progress") or 0)
+            time_ratio = (current_time / duration) if duration > 0 else 0.0
 
             # Buch gilt als beendet wenn isFinished == True oder Fortschritt >= 98%
-            if is_finished or progress_ratio >= 0.98 or (duration > 0 and (current_time / duration) >= 0.98):
+            if is_finished or progress_ratio >= 0.98 or time_ratio >= 0.98:
                 continue
 
             selected_book = b
+            logger.info(f"-> Auswahl: Folge {b.get('sequence', '?')} ('{b_title}') [Unvollendet bei {progress_ratio:.1%}]")
             break
 
         # Falls alle Bücher bereits gehört wurden, starte wieder mit dem ersten
         if not selected_book:
             selected_book = sorted_books[0]
+            logger.info(f"-> Alle Bücher bereits beendet -> starte Serie von vorne mit Folge {selected_book.get('sequence', 1)}.")
 
         book_id = selected_book.get("id") or selected_book.get("libraryItemId")
         title = selected_book.get("media", {}).get("metadata", {}).get("title") or selected_book.get("name") or selected_book.get("title") or "Unbekannter Titel"

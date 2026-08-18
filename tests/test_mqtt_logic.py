@@ -127,3 +127,33 @@ def test_configured_abs_series_tag(temp_env):
     assert result["volume"] == 30
     abs_client.resolve_next_book_in_series.assert_called_once_with("ser_bibi", library_id="lib_bibi", user_token="token_kizi")
     mqtt_service.publish.assert_called_once()
+
+
+def test_configured_album_tag(temp_env):
+    mqtt_service = temp_env["mqtt_service"]
+    db_path = temp_env["db_path"]
+
+    upsert_tag(db_path, {
+        "tag_id": "ALBUM_TAG",
+        "alias": "Rock Anthems Album",
+        "action_type": "Album",
+        "target_id": "mass://album/rock_classics",
+        "volume": 40,
+        "random": False
+    })
+
+    event_data = {
+        "tag_id": "ALBUM_TAG",
+        "reader_id": "reader_kizi",
+        "status": "scanned"
+    }
+
+    result = mqtt_service.process_rfid_event(event_data)
+
+    assert result["status"] == "scanned"
+    assert result["action_type"] == "media"
+    assert result["media_type"] == "album"
+    assert result["target_player"] == "media_player.kinderzimmer"
+    assert result["target_id"] == "mass://album/rock_classics"
+    assert result["volume"] == 40
+

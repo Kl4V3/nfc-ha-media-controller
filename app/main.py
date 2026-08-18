@@ -9,24 +9,53 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from app import __version__
 from app.config import load_config, AppConfig
 from app.database import init_db
 from app.audiobookshelf import AudiobookshelfClient
 from app.mqtt_client import MQTTService
 from app.routes.api import api_router
 from app.routes.ws import ws_router, ws_manager
+from collections import deque
+
+class MemoryLogHandler(logging.Handler):
+    """Speichert die letzten N Logzeilen im Speicher für API-Abrufe."""
+    def __init__(self, capacity: int = 250):
+        super().__init__()
+        self.logs = deque(maxlen=capacity)
+
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            self.logs.append(msg)
+        except Exception:
+            pass
+
+    def get_logs(self):
+        return list(self.logs)
+
+log_buffer = MemoryLogHandler(capacity=250)
+log_formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+log_buffer.setFormatter(log_formatter)
 
 # Logging einrichten
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-)
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+root_logger.addHandler(log_buffer)
+
+# Konsole Handler falls noch nicht vorhanden
+if not any(isinstance(h, logging.StreamHandler) and not isinstance(h, MemoryLogHandler) for h in root_logger.handlers):
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(log_formatter)
+    root_logger.addHandler(console_handler)
+
 logger = logging.getLogger("nfc_controller")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifecycle-Manager für Initialisierung und sauberes Herunterfahren."""
+    app.state.log_buffer = log_buffer
     logger.info("Starte NFC Media Controller...")
 
     # 1. Konfiguration laden (falls nicht für Tests vorinitialisiert)
@@ -83,7 +112,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="NFC Media Controller",
     description="RFID/NFC Middleware für ESPHome, Audiobookshelf & Home Assistant",
-    version="1.0.0",
+    version=__version__,
     lifespan=lifespan
 )
 
@@ -112,7 +141,7 @@ async def serve_index(request: Request):
         name="index.html",
         context={
             "config": config,
-            "version": "1.0.0"
+            "version": __version__
         }
     )
 

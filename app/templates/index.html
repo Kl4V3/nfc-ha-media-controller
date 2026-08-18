@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NFC Media Controller</title>
     <meta name="description" content="RFID/NFC Middleware für ESPHome, Audiobookshelf & Home Assistant">
+    <link rel="icon" type="image/x-icon" href="/static/img/favicon.ico">
+    <link rel="icon" type="image/png" href="/static/img/favicon.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -17,7 +19,8 @@
         <div class="header-container">
             <div class="brand">
                 <div class="logo-icon">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <img src="/static/img/logo.svg" alt="Logo" class="custom-logo" onerror="this.onerror=null; this.src='/static/img/logo'; this.onerror=function(){ this.style.display='none'; this.nextElementSibling.style.display='block'; };">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
                         <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/>
                         <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
                         <path d="M4 4a16 16 0 0 1 16 0"/>
@@ -42,6 +45,7 @@
                     <span class="dot"></span>
                     <span class="label">Live</span>
                 </div>
+                <button id="btn-open-logs" class="btn btn-sm btn-secondary" style="margin-left: 6px;">📋 Logs</button>
             </div>
         </div>
     </header>
@@ -103,6 +107,7 @@
                         <option value="all">Alle Typen</option>
                         <option value="Serie">Serie (Audiobookshelf)</option>
                         <option value="Hoerbuch">Hörbuch</option>
+                        <option value="Album">Album (Music Assistant)</option>
                         <option value="Playlist">Playlist</option>
                         <option value="Licht">Licht</option>
                         <option value="Szene">Szene</option>
@@ -306,7 +311,8 @@
                                 <option value="">-- Typ wählen --</option>
                                 <option value="Serie">Serie (Audiobookshelf dynamisch)</option>
                                 <option value="Hoerbuch">Hörbuch (Einzelner Track / Album)</option>
-                                <option value="Playlist">Playlist</option>
+                                <option value="Album">Musik-Album (Music Assistant)</option>
+                                <option value="Playlist">Playlist (Music Assistant)</option>
                                 <option value="Licht">Lichtsteuerung</option>
                                 <option value="Szene">Szene</option>
                                 <option value="Custom">Benutzerdefiniert</option>
@@ -438,6 +444,32 @@
             </div>
             <div class="modal-footer">
                 <button type="button" id="btn-copy-payload-modal" class="btn btn-primary">📋 Kopieren</button>
+                <button type="button" class="btn btn-secondary" data-close-modal>Schließen</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- =======================================================================
+         MODAL: SYSTEM LOGS VIEWER
+         ======================================================================= -->
+    <div id="logs-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-dialog modal-lg" style="max-width: 900px; width: 95%;">
+            <div class="modal-header">
+                <h3>📋 System & Container Live-Logs</h3>
+                <button class="modal-close" data-close-modal>&times;</button>
+            </div>
+            <div class="modal-body">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <span class="text-xs text-muted">Letzte 250 Logzeilen aus dem Server-Arbeitsspeicher:</span>
+                    <div style="display: flex; gap: 8px;">
+                        <button type="button" id="btn-refresh-logs" class="btn btn-xs btn-secondary">🔄 Aktualisieren</button>
+                        <button type="button" id="btn-copy-logs" class="btn btn-xs btn-primary">📋 Logs kopieren</button>
+                    </div>
+                </div>
+                <pre id="system-logs-content" class="code-block" style="max-height: 480px; overflow-y: auto; font-size: 11px; white-space: pre-wrap; line-height: 1.4;"></pre>
+            </div>
+            <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-close-modal>Schließen</button>
             </div>
         </div>

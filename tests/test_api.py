@@ -117,3 +117,12 @@ def test_system_status_api(client):
     assert "mqtt" in data
     assert "audiobookshelf" in data
     assert "media" in data
+
+
+def test_system_logs_api(client):
+    res = client.get("/api/system/logs")
+    assert res.status_code == 200
+    data = res.json()
+    assert "logs" in data
+    assert isinstance(data["logs"], list)
+
