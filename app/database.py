@@ -41,6 +41,7 @@ def init_db(db_path: str):
                     tag_id TEXT PRIMARY KEY,
                     alias TEXT,
                     action_type TEXT,
+                    library_id TEXT,
                     target_id TEXT,
                     volume INTEGER,
                     random BOOLEAN DEFAULT 0,
@@ -50,6 +51,12 @@ def init_db(db_path: str):
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+
+            # Migration falls library_id in älterer DB-Version fehlt
+            try:
+                conn.execute("ALTER TABLE tags ADD COLUMN library_id TEXT")
+            except Exception:
+                pass
 
             # Tabelle scan_history (Protokoll der letzten Scans für UI & Debugging)
             conn.execute("""
@@ -83,7 +90,7 @@ def get_all_tags(db_path: str) -> List[Dict[str, Any]]:
     conn = get_db_connection(db_path)
     try:
         cursor = conn.execute("""
-            SELECT tag_id, alias, action_type, target_id, volume, random, 
+            SELECT tag_id, alias, action_type, library_id, target_id, volume, random, 
                    extra_params, last_scanned, created_at, updated_at
             FROM tags 
             ORDER BY 
@@ -96,7 +103,6 @@ def get_all_tags(db_path: str) -> List[Dict[str, Any]]:
         for row in rows:
             tag = dict(row)
             tag["random"] = bool(tag["random"])
-            # Versuche extra_params als JSON zu parsen
             if tag["extra_params"]:
                 try:
                     tag["extra_params_parsed"] = json.loads(tag["extra_params"])
@@ -149,14 +155,15 @@ def auto_discover_or_update_tag(db_path: str, tag_id: str) -> Dict[str, Any]:
                 # Neu anlegen (Auto-Discovery)
                 default_alias = f"Unbekannter Tag {tag_id}"
                 conn.execute("""
-                    INSERT INTO tags (tag_id, alias, action_type, target_id, volume, random, extra_params, last_scanned, created_at, updated_at)
-                    VALUES (?, ?, '', '', NULL, 0, '{}', ?, ?, ?)
+                    INSERT INTO tags (tag_id, alias, action_type, library_id, target_id, volume, random, extra_params, last_scanned, created_at, updated_at)
+                    VALUES (?, ?, '', '', '', NULL, 0, '{}', ?, ?, ?)
                 """, (tag_id, default_alias, now, now, now))
                 logger.info(f"Auto-Discovery: Neuer Tag '{tag_id}' in Datenbank angelegt.")
                 return {
                     "tag_id": tag_id,
                     "alias": default_alias,
                     "action_type": "",
+                    "library_id": "",
                     "target_id": "",
                     "volume": None,
                     "random": False,
@@ -190,6 +197,7 @@ def upsert_tag(db_path: str, tag_data: Dict[str, Any]) -> Dict[str, Any]:
     tag_id = tag_data.get("tag_id")
     alias = tag_data.get("alias", "")
     action_type = tag_data.get("action_type", "")
+    library_id = tag_data.get("library_id", "")
     target_id = tag_data.get("target_id", "")
     volume = tag_data.get("volume")
     random_flag = 1 if tag_data.get("random") else 0
@@ -207,17 +215,18 @@ def upsert_tag(db_path: str, tag_data: Dict[str, Any]) -> Dict[str, Any]:
     try:
         with conn:
             conn.execute("""
-                INSERT INTO tags (tag_id, alias, action_type, target_id, volume, random, extra_params, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO tags (tag_id, alias, action_type, library_id, target_id, volume, random, extra_params, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(tag_id) DO UPDATE SET
                     alias = excluded.alias,
                     action_type = excluded.action_type,
+                    library_id = excluded.library_id,
                     target_id = excluded.target_id,
                     volume = excluded.volume,
                     random = excluded.random,
                     extra_params = excluded.extra_params,
                     updated_at = excluded.updated_at
-            """, (tag_id, alias, action_type, target_id, volume, random_flag, extra_params_str, now, now))
+            """, (tag_id, alias, action_type, library_id, target_id, volume, random_flag, extra_params_str, now, now))
         return get_tag_by_id(db_path, tag_id)
     finally:
         conn.close()

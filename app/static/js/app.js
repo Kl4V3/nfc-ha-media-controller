@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let historyList = [];
     let absContentList = [];
     let absCurrentTab = 'series'; // 'series' or 'items'
+    let modalAbsCurrentTab = 'series';
     let ws = null;
     let currentEditingTagId = null;
 
@@ -54,12 +55,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const inputTagId = document.getElementById('tag-id-input');
     const inputTagAlias = document.getElementById('tag-alias-input');
     const selectTagActionType = document.getElementById('tag-action-type');
+    const groupLibraryId = document.getElementById('group-library-id');
+    const inputTagLibraryId = document.getElementById('tag-library-id');
     const inputTagVolume = document.getElementById('tag-volume');
     const inputTagTargetId = document.getElementById('tag-target-id');
     const checkTagRandom = document.getElementById('tag-random');
     const inputTagExtraParams = document.getElementById('tag-extra-params');
-    const btnPickAbsSeries = document.getElementById('btn-pick-abs-series');
+    const btnToggleModalAbsPicker = document.getElementById('btn-toggle-modal-abs-picker');
     const elTargetIdHelper = document.getElementById('target-id-helper');
+
+    // In-Modal ABS Picker Elements
+    const elModalAbsPickerBox = document.getElementById('modal-abs-picker-box');
+    const btnModalAbsTabSeries = document.getElementById('btn-modal-abs-tab-series');
+    const btnModalAbsTabItems = document.getElementById('btn-modal-abs-tab-items');
+    const btnCloseModalAbsPicker = document.getElementById('btn-close-modal-abs-picker');
+    const inputModalAbsSearch = document.getElementById('modal-abs-search-input');
+    const elModalAbsResultsList = document.getElementById('modal-abs-results-list');
 
     const elReaderModal = document.getElementById('reader-modal');
     const elReaderForm = document.getElementById('reader-form');
@@ -73,7 +84,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const elPayloadModalContent = document.getElementById('payload-modal-content');
     const btnCopyPayloadModal = document.getElementById('btn-copy-payload-modal');
 
-    // DOM Elements - Simulator & ABS
+    // DOM Elements - Simulator & ABS Tab
     const inputSimReaderId = document.getElementById('sim-reader-id');
     const inputSimTagId = document.getElementById('sim-tag-id');
     const btnSimScan = document.getElementById('btn-sim-scan');
@@ -130,23 +141,160 @@ document.addEventListener('DOMContentLoaded', () => {
     selectTagActionType.addEventListener('change', () => {
         const val = selectTagActionType.value;
         if (val === 'Serie') {
-            elTargetIdHelper.textContent = 'Audiobookshelf Serien-ID (z. B. ser_xyz)';
-            inputTagTargetId.placeholder = 'ser_xyz';
-            btnPickAbsSeries.classList.remove('hidden');
-        } else if (val === 'Hoerbuch' || val === 'Playlist') {
-            elTargetIdHelper.textContent = 'Medien-URI oder ABS-Item-ID (z. B. mass://track/123 oder abs-item-id)';
-            inputTagTargetId.placeholder = 'audiobookshelf://track/xyz oder mass://track/123';
-            btnPickAbsSeries.classList.remove('hidden');
+            if (groupLibraryId) groupLibraryId.classList.remove('hidden');
+            if (inputTagLibraryId) inputTagLibraryId.required = true;
+            elTargetIdHelper.textContent = 'Audiobookshelf Serien-ID (z. B. 01048bbc...). Ermittelt live das nächste unfertige Buch (z. B. Folge 4/10).';
+            inputTagTargetId.placeholder = '01048bbc-3909-4db4-af85-ed81d2f087b3';
+            btnToggleModalAbsPicker.classList.remove('hidden');
+            btnToggleModalAbsPicker.textContent = '📚 In ABS suchen';
+        } else if (val === 'Hoerbuch') {
+            if (groupLibraryId) groupLibraryId.classList.remove('hidden');
+            if (inputTagLibraryId) inputTagLibraryId.required = true;
+            elTargetIdHelper.textContent = 'ABS Item-ID (z. B. 5dcb6e5d-...).';
+            inputTagTargetId.placeholder = '5dcb6e5d-962d-434f-b26d-60a6a8cc30f8';
+            btnToggleModalAbsPicker.classList.remove('hidden');
+            btnToggleModalAbsPicker.textContent = '🎧 In ABS suchen';
+        } else if (val === 'Playlist') {
+            if (groupLibraryId) groupLibraryId.classList.add('hidden');
+            if (inputTagLibraryId) { inputTagLibraryId.required = false; inputTagLibraryId.value = ''; }
+            elTargetIdHelper.textContent = 'Music Assistant Playlist (z. B. mass://playlist/gute_nacht oder Spotify Playlist-URI).';
+            inputTagTargetId.placeholder = 'mass://playlist/schlafenszeit';
+            btnToggleModalAbsPicker.classList.add('hidden');
+            elModalAbsPickerBox.classList.add('hidden');
         } else if (val === 'Licht' || val === 'Szene') {
+            if (groupLibraryId) groupLibraryId.classList.add('hidden');
+            if (inputTagLibraryId) { inputTagLibraryId.required = false; inputTagLibraryId.value = ''; }
             elTargetIdHelper.textContent = 'Home Assistant Entitäts-ID (z. B. light.kinderzimmer oder scene.schlafenszeit)';
-            inputTagTargetId.placeholder = 'light.kinderzimmer';
-            btnPickAbsSeries.classList.add('hidden');
+            inputTagTargetId.placeholder = val === 'Licht' ? 'light.kinderzimmer' : 'scene.schlafenszeit';
+            btnToggleModalAbsPicker.classList.add('hidden');
+            elModalAbsPickerBox.classList.add('hidden');
         } else {
+            if (groupLibraryId) groupLibraryId.classList.add('hidden');
+            if (inputTagLibraryId) { inputTagLibraryId.required = false; inputTagLibraryId.value = ''; }
             elTargetIdHelper.textContent = 'Ziel-ID oder Befehl';
             inputTagTargetId.placeholder = 'Ziel-ID';
-            btnPickAbsSeries.classList.add('hidden');
+            btnToggleModalAbsPicker.classList.add('hidden');
+            elModalAbsPickerBox.classList.add('hidden');
         }
     });
+
+    // =========================================================================
+    // IN-MODAL ABS PICKER LOGIC
+    // =========================================================================
+
+    btnToggleModalAbsPicker.addEventListener('click', () => {
+        const isHidden = elModalAbsPickerBox.classList.contains('hidden');
+        if (isHidden) {
+            elModalAbsPickerBox.classList.remove('hidden');
+            if (selectTagActionType.value === 'Hoerbuch') {
+                setModalAbsTab('items');
+            } else {
+                setModalAbsTab('series');
+            }
+            loadModalAbsContent();
+            inputModalAbsSearch.focus();
+        } else {
+            elModalAbsPickerBox.classList.add('hidden');
+        }
+    });
+
+    btnCloseModalAbsPicker.addEventListener('click', () => {
+        elModalAbsPickerBox.classList.add('hidden');
+    });
+
+    btnModalAbsTabSeries.addEventListener('click', () => setModalAbsTab('series'));
+    btnModalAbsTabItems.addEventListener('click', () => setModalAbsTab('items'));
+
+    function setModalAbsTab(tab) {
+        modalAbsCurrentTab = tab;
+        if (tab === 'series') {
+            btnModalAbsTabSeries.className = 'btn btn-xs btn-primary';
+            btnModalAbsTabItems.className = 'btn btn-xs btn-secondary';
+        } else {
+            btnModalAbsTabItems.className = 'btn btn-xs btn-primary';
+            btnModalAbsTabSeries.className = 'btn btn-xs btn-secondary';
+        }
+        loadModalAbsContent();
+    }
+
+    inputModalAbsSearch.addEventListener('input', () => {
+        renderModalAbsResults();
+    });
+
+    async function loadModalAbsContent() {
+        elModalAbsResultsList.innerHTML = `<p class="text-muted text-center py-2 text-xs">Lade Inhalte aus allen ABS-Bibliotheken...</p>`;
+        const endpoint = modalAbsCurrentTab === 'series' ? '/api/abs/series' : '/api/abs/items?limit=100';
+        try {
+            const res = await fetch(endpoint);
+            if (res.ok) {
+                absContentList = await res.json();
+                renderModalAbsResults();
+            } else {
+                elModalAbsResultsList.innerHTML = `<p class="text-danger text-center py-2 text-xs">Fehler beim Laden (HTTP ${res.status}).</p>`;
+            }
+        } catch (e) {
+            elModalAbsResultsList.innerHTML = `<p class="text-danger text-center py-2 text-xs">ABS nicht erreichbar: ${e}</p>`;
+        }
+    }
+
+    function renderModalAbsResults() {
+        const query = inputModalAbsSearch.value.toLowerCase().trim();
+        const filtered = absContentList.filter(item => {
+            const title = (item.name || item.title || '').toLowerCase();
+            const id = (item.id || '').toLowerCase();
+            const author = (item.author || '').toLowerCase();
+            return title.includes(query) || id.includes(query) || author.includes(query);
+        });
+
+        if (filtered.length === 0) {
+            const msg = modalAbsCurrentTab === 'series'
+                ? 'Keine Serien gefunden (wechsle oben zu "🎧 Hörbücher" falls nicht als Serie angelegt).'
+                : 'Keine Hörbücher gefunden.';
+            elModalAbsResultsList.innerHTML = `<p class="text-muted text-center py-2 text-xs">${msg}</p>`;
+            return;
+        }
+
+        elModalAbsResultsList.innerHTML = filtered.map(item => {
+            const isSeries = modalAbsCurrentTab === 'series';
+            const title = item.name || item.title || 'Unbekannt';
+            const meta = isSeries
+                ? `Serie (${item.num_books} Bücher) • ID: ${item.id}`
+                : `${item.author ? item.author + ' • ' : ''}ID: ${item.id}`;
+
+            return `
+                <div class="abs-series-item py-1">
+                    <div style="max-width: 70%;">
+                        <div class="abs-series-title text-xs"><strong>${escapeHtml(title)}</strong></div>
+                        <div class="abs-series-meta font-mono" style="font-size: 10px;">${escapeHtml(meta)}</div>
+                    </div>
+                    <button type="button" class="btn btn-xs btn-primary" onclick="window.applyModalAbsItem('${escapeHtml(item.id)}', '${escapeHtml(item.library_id || '')}', '${escapeHtml(title)}', ${isSeries})">
+                        Übernehmen
+                    </button>
+                </div>
+            `;
+        }).join('');
+    }
+
+    window.applyModalAbsItem = function(id, libraryId, title, isSeries) {
+        inputTagTargetId.value = id;
+        if (inputTagLibraryId) {
+            inputTagLibraryId.value = libraryId || '';
+        }
+        if (!inputTagAlias.value.trim()) {
+            inputTagAlias.value = title;
+        }
+        selectTagActionType.value = isSeries ? 'Serie' : 'Hoerbuch';
+        selectTagActionType.dispatchEvent(new Event('change'));
+        elModalAbsPickerBox.classList.add('hidden');
+        
+        // Highlight Effect
+        inputTagTargetId.style.borderColor = '#10b981';
+        if (inputTagLibraryId) inputTagLibraryId.style.borderColor = '#10b981';
+        setTimeout(() => { 
+            inputTagTargetId.style.borderColor = ''; 
+            if (inputTagLibraryId) inputTagLibraryId.style.borderColor = '';
+        }, 1200);
+    };
 
     // =========================================================================
     // API CALLS & DATA LOADING
@@ -262,7 +410,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 ? `<span class="badge badge-type">${escapeHtml(tag.action_type)}</span>`
                 : `<span class="text-muted">—</span>`;
 
-            // Nur wenn konfiguriert Werte anzeigen
             const targetDisplay = (!isUnconfigured && tag.target_id)
                 ? `<span title="${escapeHtml(tag.target_id)}">${escapeHtml(truncate(tag.target_id, 28))}</span>`
                 : `<span class="text-muted">—</span>`;
@@ -418,10 +565,12 @@ document.addEventListener('DOMContentLoaded', () => {
         inputTagId.disabled = false;
         inputTagAlias.value = '';
         selectTagActionType.value = '';
+        if (inputTagLibraryId) inputTagLibraryId.value = '';
         inputTagVolume.value = '';
         inputTagTargetId.value = '';
         checkTagRandom.checked = false;
         inputTagExtraParams.value = '{}';
+        elModalAbsPickerBox.classList.add('hidden');
         selectTagActionType.dispatchEvent(new Event('change'));
         elTagModal.classList.remove('hidden');
     });
@@ -436,10 +585,12 @@ document.addEventListener('DOMContentLoaded', () => {
         inputTagId.disabled = true;
         inputTagAlias.value = tag.alias || '';
         selectTagActionType.value = tag.action_type || '';
+        if (inputTagLibraryId) inputTagLibraryId.value = tag.library_id || '';
         inputTagVolume.value = tag.volume !== null ? tag.volume : '';
         inputTagTargetId.value = tag.target_id || '';
         checkTagRandom.checked = !!tag.random;
         inputTagExtraParams.value = tag.extra_params || '{}';
+        elModalAbsPickerBox.classList.add('hidden');
         selectTagActionType.dispatchEvent(new Event('change'));
         elTagModal.classList.remove('hidden');
     };
@@ -461,6 +612,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const tagId = inputTagId.value.trim();
         const alias = inputTagAlias.value.trim();
         const actionType = selectTagActionType.value;
+        const libraryId = inputTagLibraryId ? inputTagLibraryId.value.trim() : '';
         const volumeVal = inputTagVolume.value !== '' ? parseInt(inputTagVolume.value, 10) : null;
         const targetId = inputTagTargetId.value.trim();
         const random = checkTagRandom.checked;
@@ -468,6 +620,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!tagId || !alias) {
             alert('Bitte Tag ID und Name angeben.');
+            return;
+        }
+
+        if ((actionType === 'Serie' || actionType === 'Hoerbuch') && (!libraryId || !targetId)) {
+            alert('Für Serien und Hörbücher bitte sowohl Bibliotheks-ID als auch Ziel-ID angeben (nutze am besten "In ABS suchen").');
             return;
         }
 
@@ -482,6 +639,7 @@ document.addEventListener('DOMContentLoaded', () => {
             tag_id: tagId,
             alias: alias,
             action_type: actionType,
+            library_id: libraryId,
             target_id: targetId,
             volume: volumeVal,
             random: random,
@@ -585,7 +743,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // =========================================================================
-    // TEST SIMULATOR & ABS BROWSER
+    // TEST SIMULATOR & ABS BROWSER TAB
     // =========================================================================
 
     async function runSimulation(status) {
@@ -621,7 +779,7 @@ document.addEventListener('DOMContentLoaded', () => {
     btnSimScan.addEventListener('click', () => runSimulation('scanned'));
     btnSimRemove.addEventListener('click', () => runSimulation('removed'));
 
-    // ABS Explorer
+    // ABS Tab Explorer
     btnAbsTabSeries.addEventListener('click', () => {
         absCurrentTab = 'series';
         btnAbsTabSeries.className = 'btn btn-sm btn-primary';
@@ -641,7 +799,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     async function loadAbsContent() {
-        elAbsContentList.innerHTML = `<p class="text-muted text-center py-4">Lade Inhalte aus Audiobookshelf...</p>`;
+        elAbsContentList.innerHTML = `<p class="text-muted text-center py-4">Lade Inhalte aus allen ABS-Bibliotheken...</p>`;
         const endpoint = absCurrentTab === 'series' ? '/api/abs/series' : '/api/abs/items?limit=100';
         try {
             const res = await fetch(endpoint);
@@ -686,7 +844,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div class="abs-series-title">${escapeHtml(title)}</div>
                         <div class="abs-series-meta font-mono">${escapeHtml(meta)}</div>
                     </div>
-                    <button type="button" class="btn btn-sm btn-primary" onclick="window.selectAbsItem('${escapeHtml(item.id)}', '${escapeHtml(title)}', ${isSeries})">
+                    <button type="button" class="btn btn-sm btn-primary" onclick="window.selectAbsItem('${escapeHtml(item.id)}', '${escapeHtml(item.library_id || '')}', '${escapeHtml(title)}', ${isSeries})">
                         Übernehmen
                     </button>
                 </div>
@@ -694,20 +852,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }).join('');
     }
 
-    window.selectAbsItem = function(id, title, isSeries) {
+    window.selectAbsItem = function(id, libraryId, title, isSeries) {
         inputTagTargetId.value = id;
-        if (!inputTagAlias.value) {
+        if (inputTagLibraryId) {
+            inputTagLibraryId.value = libraryId || '';
+        }
+        if (!inputTagAlias.value.trim()) {
             inputTagAlias.value = title;
         }
         selectTagActionType.value = isSeries ? 'Serie' : 'Hoerbuch';
         selectTagActionType.dispatchEvent(new Event('change'));
         elTagModal.classList.remove('hidden');
     };
-
-    btnPickAbsSeries.addEventListener('click', () => {
-        document.querySelector('[data-tab="tools-tab"]').click();
-        loadAbsContent();
-    });
 
     // =========================================================================
     // WEBSOCKET & REALTIME EVENTS

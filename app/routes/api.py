@@ -29,6 +29,7 @@ class TagModel(BaseModel):
     tag_id: str = Field(..., min_length=1)
     alias: Optional[str] = Field(default="")
     action_type: Optional[str] = Field(default="")
+    library_id: Optional[str] = Field(default="")
     target_id: Optional[str] = Field(default="")
     volume: Optional[int] = Field(default=None, ge=0, le=100)
     random: Optional[bool] = Field(default=False)

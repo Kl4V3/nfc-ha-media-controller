@@ -110,6 +110,55 @@ class MQTTService:
             logger.error(f"Fehler beim Publizieren an [{topic}]: {e}")
             return False
 
+    def _publish_ha_discovery(self):
+        """Sendet Home Assistant MQTT Discovery-Payloads für automatische Geräteerkennung."""
+        try:
+            device_info = {
+                "identifiers": ["nfc_media_controller"],
+                "name": "NFC Media Controller",
+                "model": "NFC HA Middleware",
+                "manufacturer": "theklave",
+                "sw_version": "1.0.1"
+            }
+
+            # 1. Sensor: Letzter gescannter Titel / Tag
+            last_tag_config = {
+                "name": "Last Scanned Media",
+                "unique_id": "nfc_controller_last_scanned_media",
+                "state_topic": self.config.mqtt.topic_action,
+                "value_template": "{{ value_json.metadata.title | default(value_json.metadata.alias) | default(value_json.target_id) | default(value_json.status) }}",
+                "json_attributes_topic": self.config.mqtt.topic_action,
+                "icon": "mdi:nfc-variant",
+                "device": device_info
+            }
+            self.publish("homeassistant/sensor/nfc_media_controller/last_media/config", last_tag_config)
+
+            # 2. Sensor: Letzter aktiver Reader
+            last_reader_config = {
+                "name": "Last Active Reader",
+                "unique_id": "nfc_controller_last_active_reader",
+                "state_topic": self.config.mqtt.topic_action,
+                "value_template": "{{ value_json.reader_id | default('None') }}",
+                "icon": "mdi:radio-tower",
+                "device": device_info
+            }
+            self.publish("homeassistant/sensor/nfc_media_controller/last_reader/config", last_reader_config)
+
+            # 3. Sensor: Status / Aktion
+            last_status_config = {
+                "name": "Last Action Type",
+                "unique_id": "nfc_controller_last_action_type",
+                "state_topic": self.config.mqtt.topic_action,
+                "value_template": "{{ value_json.action_type | default(value_json.status) }}",
+                "icon": "mdi:play-circle-outline",
+                "device": device_info
+            }
+            self.publish("homeassistant/sensor/nfc_media_controller/last_action/config", last_status_config)
+
+            logger.info("Home Assistant MQTT Discovery Payloads erfolgreich publiziert.")
+        except Exception as e:
+            logger.warning(f"Fehler bei HA Discovery Publishing: {e}")
+
     def _on_connect(self, client, userdata, flags, rc, properties=None):
         """Callback bei erfolgreicher MQTT-Verbindung."""
         if rc == 0:
@@ -117,8 +166,8 @@ class MQTTService:
             topic = self.config.mqtt.topic_scanned
             logger.info(f"MQTT verbunden! Abonniere Topic: {topic}")
             client.subscribe(topic, qos=1)
-            # Auch Wildcard rfid/scanned/# abonnieren falls Reader Subtopics nutzen
             client.subscribe(f"{topic}/#", qos=1)
+            self._publish_ha_discovery()
             self._broadcast_event({
                 "type": "mqtt_status",
                 "connected": True,
@@ -175,7 +224,6 @@ class MQTTService:
             target_player = reader["target_player"]
             abs_user_token = reader.get("abs_user_token") or self.config.audiobookshelf.default_token
         else:
-            # Auto-Discovery: Reader direkt in DB eintragen
             target_player = f"media_player.{reader_id}"
             abs_user_token = self.config.audiobookshelf.default_token
             upsert_reader(db_path, {
@@ -202,7 +250,6 @@ class MQTTService:
             logger.info(f"Tag '{tag_id}' entfernt von '{reader_id}'. Sende Stop-Befehl an '{target_player}'")
             self.publish(self.config.mqtt.topic_action, stop_payload)
             
-            # In Historie eintragen
             add_scan_history(
                 db_path,
                 tag_id=tag_id,
@@ -212,7 +259,6 @@ class MQTTService:
                 payload=json.dumps(stop_payload)
             )
 
-            # Live Event an Frontend
             event = {
                 "type": "rfid_event",
                 "status": "removed",
@@ -269,48 +315,64 @@ class MQTTService:
         volume = tag.get("volume") if tag.get("volume") is not None else self.config.media.default_volume
         random_flag = tag.get("random", False)
         extra_params = tag.get("extra_params_parsed", {})
-        target_id = tag.get("target_id", "")
-        resolved_media_title = None
+        target_id = tag.get("target_id", "").strip()
+        metadata = {
+            "alias": tag.get("alias")
+        }
 
         normalized_action = action_type.lower()
+        media_type = "track"
 
         # 4a. Audiobookshelf Serie (dynamische Auflösung des nächsten unfertigen Buchs)
         if normalized_action in ["serie", "abs_serie"]:
             series_id = target_id
-            logger.info(f"Ermittle nächstes Buch für ABS-Serie '{series_id}' (User-Token: {'vorhanden' if abs_user_token else 'fehlt'})...")
-            book_info = self.abs_client.resolve_next_book_in_series(series_id, user_token=abs_user_token)
+            library_id = (tag.get("library_id") or "").strip() or None
+            logger.info(f"Ermittle nächstes Buch für ABS-Serie '{series_id}' (Library: '{library_id or 'Auto'}', User-Token: {'vorhanden' if abs_user_token else 'fehlt'})...")
+            book_info = self.abs_client.resolve_next_book_in_series(series_id, library_id=library_id, user_token=abs_user_token)
 
             if book_info and book_info.get("book_id"):
                 book_id = book_info["book_id"]
-                resolved_media_title = book_info.get("title")
-                # Formatierung je nach Integrationsmodus
-                if self.config.media.integration_mode == "mass":
-                    target_id = f"audiobookshelf://track/{book_id}"
-                else:
-                    target_id = f"audiobookshelf://item/{book_id}"
-                logger.info(f"ABS Serie '{book_info.get('series_name')}' aufgelöst: '{resolved_media_title}' (ID: {book_id})")
+                target_id = f"audiobookshelf://track/{book_id}"
+                metadata["title"] = book_info.get("title")
+                metadata["series_name"] = book_info.get("series_name")
+                metadata["sequence"] = book_info.get("sequence")
+                metadata["total_books"] = book_info.get("total_books")
+                logger.info(f"ABS Serie '{book_info.get('series_name')}' aufgelöst: '{book_info.get('title')}' (ID: {book_id})")
             else:
-                logger.warning(f"Konnte nächstes Buch für Serie '{series_id}' nicht über ABS ermitteln. Nutze Series-ID als Fallback.")
+                if not (target_id.startswith("audiobookshelf://") or target_id.startswith("mass://")):
+                    target_id = f"audiobookshelf://track/{target_id}"
+                logger.warning(f"Konnte nächstes Buch für Serie '{series_id}' nicht über ABS auflösen. Sende URI: {target_id}")
 
             action_type_out = "media"
+            media_type = "track"
 
-        # 4b. Einzelnes Hörbuch oder Playlist
-        elif normalized_action in ["hoerbuch", "hörbuch", "playlist", "album", "media"]:
+        # 4b. Einzelnes Hörbuch
+        elif normalized_action in ["hoerbuch", "hörbuch", "audiobook"]:
             action_type_out = "media"
+            media_type = "track"
+            if not (target_id.startswith("audiobookshelf://") or target_id.startswith("mass://") or target_id.startswith("http")):
+                target_id = f"audiobookshelf://track/{target_id}"
 
-        # 4c. Lichtsteuerung
+        # 4c. Playlist (Music Assistant)
+        elif normalized_action in ["playlist"]:
+            action_type_out = "media"
+            media_type = "playlist"
+            if not (target_id.startswith("mass://") or target_id.startswith("spotify://") or target_id.startswith("http")):
+                target_id = f"mass://playlist/{target_id}"
+
+        # 4d. Lichtsteuerung
         elif normalized_action in ["licht", "light"]:
             action_type_out = "light"
 
-        # 4d. Szenensteuerung
+        # 4e. Szenensteuerung
         elif normalized_action in ["szene", "scene"]:
             action_type_out = "scene"
 
-        # 4e. Benutzerdefiniert
+        # 4f. Benutzerdefiniert
         else:
             action_type_out = action_type.lower()
 
-        # 5. Finalen Action-Payload zusammenbauen und publizieren
+        # 5. Finalen standardisierten Action-Payload zusammenbauen und publizieren
         final_payload = {
             "status": "scanned",
             "action_type": action_type_out,
@@ -322,11 +384,11 @@ class MQTTService:
             "extra_params": extra_params
         }
 
-        if resolved_media_title:
-            final_payload["metadata"] = {
-                "title": resolved_media_title,
-                "alias": tag.get("alias")
-            }
+        if action_type_out == "media":
+            final_payload["media_type"] = media_type
+
+        if metadata:
+            final_payload["metadata"] = metadata
 
         logger.info(f"Publiziere Action für Tag '{tag.get('alias')}' ({tag_id}) an '{target_player}'")
         self.publish(self.config.mqtt.topic_action, final_payload)
@@ -348,10 +410,11 @@ class MQTTService:
             "tag_id": tag_id,
             "alias": tag.get("alias"),
             "action_type": action_type_out,
+            "media_type": media_type if action_type_out == "media" else None,
             "reader_id": reader_id,
             "target_player": target_player,
             "target_id": target_id,
-            "resolved_title": resolved_media_title,
+            "resolved_title": metadata.get("title"),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
         }
         self._broadcast_event(event)

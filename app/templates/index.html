@@ -319,6 +319,14 @@
                         </div>
                     </div>
 
+                    <div class="form-group hidden" id="group-library-id">
+                        <label for="tag-library-id">
+                            Bibliothek (Library ID) <span class="required">*</span>
+                            <small class="helper-text">Audiobookshelf Bibliothek (wird bei Suche automatisch befüllt)</small>
+                        </label>
+                        <input type="text" id="tag-library-id" class="form-input font-mono" placeholder="z. B. 79f6d5d2-50c9-4ce0-9fe4-edfcee4de854">
+                    </div>
+
                     <div class="form-group">
                         <label for="tag-target-id">
                             Ziel-ID (Target ID) <span class="required">*</span>
@@ -326,9 +334,27 @@
                         </label>
                         <div class="input-with-btn">
                             <input type="text" id="tag-target-id" class="form-input font-mono" placeholder="z. B. ser_abc123 oder mass://track/xyz" required>
-                            <button type="button" id="btn-pick-abs-series" class="btn btn-secondary btn-sm" title="Aus ABS wählen">
-                                ABS Serien
+                            <button type="button" id="btn-toggle-modal-abs-picker" class="btn btn-secondary btn-sm">
+                                🔍 In ABS suchen
                             </button>
+                        </div>
+                    </div>
+
+                    <!-- Integrierter ABS Schnell-Finder -->
+                    <div id="modal-abs-picker-box" class="abs-modal-picker hidden">
+                        <div class="abs-modal-picker-header">
+                            <div class="header-tab-switch">
+                                <button type="button" id="btn-modal-abs-tab-series" class="btn btn-xs btn-primary">📚 Serien</button>
+                                <button type="button" id="btn-modal-abs-tab-items" class="btn btn-xs btn-secondary">🎧 Hörbücher</button>
+                            </div>
+                            <button type="button" id="btn-close-modal-abs-picker" class="btn btn-xs btn-outline-secondary">✕ Schließen</button>
+                        </div>
+                        <div class="search-box w-100 my-2">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                            <input type="text" id="modal-abs-search-input" placeholder="Audiobookshelf durchsuchen (z.B. Drei ???, Harry Potter)...">
+                        </div>
+                        <div id="modal-abs-results-list" class="abs-modal-results">
+                            <p class="text-muted text-center py-2 text-xs">Lade Bibliotheken...</p>
                         </div>
                     </div>
 

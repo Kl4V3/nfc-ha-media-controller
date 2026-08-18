@@ -16,6 +16,7 @@
         data: "{{ trigger.payload_json }}"
         status: "{{ data.status | default('') }}"
         action_type: "{{ data.action_type | default('') }}"
+        media_type: "{{ data.media_type | default('track') }}"
         target_player: "{{ data.target_player | default('') }}"
         target_id: "{{ data.target_id | default('') }}"
         volume: "{{ data.volume | default(none) }}"
@@ -93,7 +94,7 @@
                         entity_id: "{{ target_player }}"
                       data:
                         media_id: "{{ target_id }}"
-                        media_type: "track"
+                        media_type: "{{ media_type }}"
                         radio_mode: "{{ random_flag }}"
               # Fallback Option B: Standard Home Assistant media_player.play_media
               default:

@@ -128,21 +128,65 @@ class AudiobookshelfClient:
             logger.warning(f"Konnte ABS-Items nicht abrufen: {e}")
         return all_items
 
-    def get_series_details(self, series_id: str, user_token: Optional[str] = None) -> Optional[Dict[str, Any]]:
-        """Ruft die Details einer Serie ab inklusive aller Bücher."""
+    def get_item_details(self, item_id: str, user_token: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Ruft Details eines einzelnen ABS-Items ab."""
+        url = f"{self.base_url}/api/items/{item_id}"
+        try:
+            resp = requests.get(url, headers=self._get_headers(user_token), timeout=self.timeout)
+            if resp.status_code == 200:
+                data = resp.json()
+                return data.get("libraryItem") or data.get("item") or data
+            return None
+        except Exception as e:
+            logger.warning(f"Fehler beim Abrufen von ABS-Item {item_id}: {e}")
+            return None
+
+    def get_series_details(self, series_id: str, library_id: Optional[str] = None, user_token: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Ruft die Details einer Serie ab inklusive aller Bücher (direkt via library_id oder Auto-Discovery)."""
+        # 1. Direkter Endpoint mit bekannter Library-ID (schnellster Pfad)
+        if library_id:
+            url = f"{self.base_url}/api/libraries/{library_id}/series/{series_id}"
+            try:
+                resp = requests.get(url, headers=self._get_headers(user_token), timeout=self.timeout)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    series_obj = data.get("series") or data
+                    books = series_obj.get("books") or series_obj.get("libraryItems") or []
+                    if books:
+                        return series_obj
+            except Exception as e:
+                logger.debug(f"Direkte Bibliotheks-Abfrage {url} fehlgeschlagen: {e}")
+
+        # 2. Direkter Endpoint ohne Library-ID
         url = f"{self.base_url}/api/series/{series_id}"
         try:
             resp = requests.get(url, headers=self._get_headers(user_token), timeout=self.timeout)
             if resp.status_code == 200:
-                return resp.json()
-            logger.warning(f"Serie '{series_id}' nicht gefunden: HTTP {resp.status_code}")
-            return None
-        except requests.exceptions.Timeout:
-            logger.error(f"Audiobookshelf Timeout ({self.timeout}s) bei Serie {series_id}")
-            return None
+                data = resp.json()
+                series_obj = data.get("series") or data
+                books = series_obj.get("books") or series_obj.get("libraryItems") or []
+                if books:
+                    return series_obj
         except Exception as e:
-            logger.error(f"Fehler beim Abrufen der Serie {series_id}: {e}")
-            return None
+            logger.debug(f"Direkte Serienabfrage {url} fehlgeschlagen: {e}")
+
+        # 3. Fallback: Alle Bibliotheken durchsuchen
+        try:
+            for lib in self.get_libraries(user_token):
+                lib_id = lib.get("id")
+                if not lib_id or lib_id == library_id:
+                    continue
+                url = f"{self.base_url}/api/libraries/{lib_id}/series/{series_id}"
+                resp = requests.get(url, headers=self._get_headers(user_token), timeout=self.timeout)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    series_obj = data.get("series") or data
+                    return series_obj
+        except Exception as e:
+            logger.warning(f"Bibliotheks-Scan für Serie '{series_id}' fehlgeschlagen: {e}")
+
+        logger.warning(f"Serie '{series_id}' konnte weder direkt noch über Bibliotheken gefunden werden.")
+        return None
 
     def get_user_progress(self, user_token: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
         """
@@ -157,35 +201,47 @@ class AudiobookshelfClient:
                 items = resp.json()
                 if isinstance(items, list):
                     for prog in items:
-                        item_id = prog.get("libraryItemId")
+                        item_id = prog.get("libraryItemId") or prog.get("id")
                         if item_id:
                             progress_map[item_id] = prog
-                elif isinstance(items, dict) and "libraryItemProgress" in items:
-                    for prog in items["libraryItemProgress"]:
-                        item_id = prog.get("libraryItemId")
+                elif isinstance(items, dict):
+                    prog_list = items.get("libraryItemProgress") or items.get("mediaItemProgress") or items.get("results") or []
+                    for prog in prog_list:
+                        item_id = prog.get("libraryItemId") or prog.get("id")
                         if item_id:
                             progress_map[item_id] = prog
         except Exception as e:
             logger.warning(f"Konnte Hörfortschritt nicht abrufen: {e}")
         return progress_map
 
-    def resolve_next_book_in_series(self, series_id: str, user_token: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    def resolve_next_book_in_series(self, series_id: str, library_id: Optional[str] = None, user_token: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """
         Ermittelt das nächste unvollendete Buch einer Serie für den jeweiligen Nutzer:
-        1. Ruft die Buchliste der Serie ab.
+        1. Ruft die Buchliste der Serie ab (direkt über library_id oder per Auto-Scan).
         2. Sortiert die Bücher nach Sequenznummer / Index.
         3. Gleicht den Nutzer-Hörfortschritt ab.
         4. Wählt das erste Buch, das nicht als 'isFinished' markiert ist.
         5. Wenn alle fertig sind: Wählt das erste Buch (von vorne) oder das letzte.
         """
-        series_data = self.get_series_details(series_id, user_token)
+        series_data = self.get_series_details(series_id, library_id=library_id, user_token=user_token)
+        
+        # Fallback: Falls die ID keine Serie sondern ein einzelnes Buch ist
         if not series_data:
+            item_data = self.get_item_details(series_id, user_token)
+            if item_data:
+                title = item_data.get("media", {}).get("metadata", {}).get("title") or item_data.get("name") or "Hörbuch"
+                return {
+                    "series_id": series_id,
+                    "series_name": "Audiobook",
+                    "book_id": item_data.get("id") or series_id,
+                    "title": title,
+                    "sequence": 1,
+                    "total_books": 1
+                }
             return None
 
         # Bücher aus der Serie extrahieren
-        books = series_data.get("books", [])
-        if not books and "libraryItems" in series_data:
-            books = series_data.get("libraryItems", [])
+        books = series_data.get("books") or series_data.get("libraryItems") or series_data.get("items") or []
 
         if not books:
             logger.warning(f"Keine Bücher in ABS-Serie '{series_id}' gefunden.")
@@ -218,15 +274,16 @@ class AudiobookshelfClient:
                 break
 
             is_finished = prog.get("isFinished", False)
-            current_time = prog.get("currentTime", 0)
-            duration = prog.get("duration", 0)
+            current_time = float(prog.get("currentTime") or 0)
+            duration = float(prog.get("duration") or 0)
+            progress_ratio = float(prog.get("progress") or 0)
 
-            # Buch gilt als beendet wenn isFinished == True oder > 98% gehört
-            if not is_finished:
-                if duration > 0 and (current_time / duration) >= 0.98:
-                    continue
-                selected_book = b
-                break
+            # Buch gilt als beendet wenn isFinished == True oder Fortschritt >= 98%
+            if is_finished or progress_ratio >= 0.98 or (duration > 0 and (current_time / duration) >= 0.98):
+                continue
+
+            selected_book = b
+            break
 
         # Falls alle Bücher bereits gehört wurden, starte wieder mit dem ersten
         if not selected_book:

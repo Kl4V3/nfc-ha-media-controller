@@ -17,6 +17,7 @@ action:
       data: "{{ trigger.payload_json }}"
       status: "{{ data.status | default('') }}"
       action_type: "{{ data.action_type | default('') }}"
+      media_type: "{{ data.media_type | default('track') }}"
       target_player: "{{ data.target_player | default('') }}"
       target_id: "{{ data.target_id | default('') }}"
       volume: "{{ data.volume | default(none) }}"
@@ -64,9 +65,22 @@ action:
                       entity_id: "{{ target_player }}"
                     data:
                       volume_level: "{{ (volume | float) / 100 }}"
-          - service: media_player.play_media
-            target:
-              entity_id: "{{ target_player }}"
-            data:
-              media_content_id: "{{ target_id }}"
-              media_content_type: "music"
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ is_state_attr('update.music_assistant', 'installed', true) or target_id.startswith('mass:') or target_id.startswith('audiobookshelf:') }}"
+                sequence:
+                  - service: mass.play_media
+                    target:
+                      entity_id: "{{ target_player }}"
+                    data:
+                      media_id: "{{ target_id }}"
+                      media_type: "{{ media_type }}"
+                      radio_mode: "{{ random_flag }}"
+            default:
+              - service: media_player.play_media
+                target:
+                  entity_id: "{{ target_player }}"
+                data:
+                  media_content_id: "{{ target_id }}"
+                  media_content_type: "music"

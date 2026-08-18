@@ -97,6 +97,7 @@ def test_configured_abs_series_tag(temp_env):
         "tag_id": "SERIES_TAG",
         "alias": "Bibi Blocksberg Serie",
         "action_type": "Serie",
+        "library_id": "lib_bibi",
         "target_id": "ser_bibi",
         "volume": 30,
         "random": False
@@ -124,5 +125,5 @@ def test_configured_abs_series_tag(temp_env):
     assert result["target_player"] == "media_player.kinderzimmer"
     assert "book_folge_42" in result["target_id"]
     assert result["volume"] == 30
-    abs_client.resolve_next_book_in_series.assert_called_once_with("ser_bibi", user_token="token_kizi")
+    abs_client.resolve_next_book_in_series.assert_called_once_with("ser_bibi", library_id="lib_bibi", user_token="token_kizi")
     mqtt_service.publish.assert_called_once()
