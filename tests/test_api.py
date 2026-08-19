@@ -106,8 +106,9 @@ def test_scan_simulator_api(client):
     res = client.post("/api/test/scan", json=payload)
     assert res.status_code == 200
     data = res.json()
-    assert data["success"] is True
-    assert data["action_result"]["status"] == "warning"  # Da unkonfiguriert
+    assert data["status"] == "warning"  # Da unkonfiguriert
+    assert data["action_type"] == "warning"
+    assert data["reader_id"] == "reader_kizi"
 
 
 def test_system_status_api(client):

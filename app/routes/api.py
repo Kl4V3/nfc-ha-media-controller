@@ -195,11 +195,7 @@ def resolve_abs_series(series_id: str, request: Request, token: Optional[str] = 
 def simulate_scan(sim_data: ScanSimulationModel, request: Request):
     mqtt_service = request.app.state.mqtt_service
     result = mqtt_service.process_rfid_event(sim_data.model_dump())
-    return {
-        "success": True,
-        "input": sim_data.model_dump(),
-        "action_result": result
-    }
+    return result
 
 
 # ==============================================================================

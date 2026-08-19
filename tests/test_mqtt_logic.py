@@ -63,7 +63,14 @@ def test_tag_removed_event(temp_env):
             "status": "removed",
             "action_type": "stop",
             "reader_id": "reader_kizi",
-            "target_player": "media_player.kinderzimmer"
+            "target_player": "media_player.kinderzimmer",
+            "target_id": "",
+            "volume": 0,
+            "random": False,
+            "extra_params": {},
+            "metadata": {
+                "tag_id": "TAG_123"
+            }
         }
     )
 

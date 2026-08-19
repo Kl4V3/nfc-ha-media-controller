@@ -246,7 +246,14 @@ class MQTTService:
                 "status": "removed",
                 "action_type": "stop",
                 "reader_id": reader_id,
-                "target_player": target_player
+                "target_player": target_player,
+                "target_id": "",
+                "volume": 0,
+                "random": False,
+                "extra_params": {},
+                "metadata": {
+                    "tag_id": tag_id
+                }
             }
             logger.info(f"Tag '{tag_id}' entfernt von '{reader_id}'. Sende Stop-Befehl an '{target_player}'")
             self.publish(self.config.mqtt.topic_action, stop_payload)
@@ -285,7 +292,14 @@ class MQTTService:
                 "target_player": target_player,
                 "target_id": self.config.media.warning_sound_uri,
                 "volume": warn_volume,
-                "message": "Tag not configured in database"
+                "random": False,
+                "extra_params": {},
+                "media_type": "music",
+                "message": "Tag not configured in database",
+                "metadata": {
+                    "alias": tag.get("alias") or "Unbekannter Tag",
+                    "tag_id": tag_id
+                }
             }
             logger.warning(f"Unkonfigurierter Tag '{tag_id}' auf Reader '{reader_id}' gescannt. Sende Warn-Payload.")
             self.publish(self.config.mqtt.topic_action, warning_payload)
