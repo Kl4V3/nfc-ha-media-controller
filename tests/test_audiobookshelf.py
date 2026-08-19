@@ -134,3 +134,53 @@ def test_search_items_and_series(mock_get):
     assert series[0]["id"] == "ser_disney"
     assert series[0]["name"] == "Disney Classics"
 
+
+@patch("requests.delete")
+@patch("requests.get")
+def test_resolve_series_all_finished_triggers_reset(mock_get, mock_delete):
+    client = AudiobookshelfClient("http://abs.local:13378", default_token="token123", timeout=3.0)
+
+    # Mock series response (2 books in series)
+    series_resp = MagicMock()
+    series_resp.status_code = 200
+    series_resp.json.return_value = {
+        "id": "ser_all_done",
+        "name": "Bibi Blocksberg",
+        "books": [
+            {"id": "book_1", "sequence": "1", "title": "Hexen gibt es doch"},
+            {"id": "book_2", "sequence": "2", "title": "Hexerei im Zirkus"}
+        ]
+    }
+
+    # All books are finished
+    progress_resp = MagicMock()
+    progress_resp.status_code = 200
+    progress_resp.json.return_value = {
+        "mediaProgress": [
+            {"libraryItemId": "book_1", "isFinished": True, "currentTime": 3600, "duration": 3600, "progress": 1.0},
+            {"libraryItemId": "book_2", "isFinished": True, "currentTime": 3500, "duration": 3500, "progress": 1.0}
+        ]
+    }
+
+    def side_effect(url, **kwargs):
+        if "/api/series/ser_all_done" in url:
+            return series_resp
+        elif "/api/me/progress" in url:
+            return progress_resp
+        return MagicMock(status_code=404)
+
+    mock_get.side_effect = side_effect
+    mock_delete.return_value = MagicMock(status_code=200)
+
+    resolved = client.resolve_next_book_in_series("ser_all_done", user_token="user_tok")
+
+    assert resolved is not None
+    assert resolved["series_id"] == "ser_all_done"
+    assert resolved["book_id"] == "book_1"
+    assert resolved["sequence"] in [1, "1"]
+    assert resolved["title"] == "Hexen gibt es doch"
+
+    # Verify that DELETE was called for both books to reset their progress
+    assert mock_delete.call_count == 2
+
+

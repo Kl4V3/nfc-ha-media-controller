@@ -27,7 +27,7 @@ class AudiobookshelfConfig(BaseModel):
 
 
 class MediaConfig(BaseModel):
-    warning_sound_uri: str = Field(default="http://homeassistant.local:8123/local/sounds/tag_unknown.mp3")
+    warning_sound_uri: str = Field(default="media-source://media_source/local/warningMissingNFC.wav")
     default_volume: int = Field(default=20)
     integration_mode: str = Field(default="mass")  # "mass" oder "media_player"
 

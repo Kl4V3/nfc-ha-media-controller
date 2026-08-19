@@ -324,7 +324,9 @@ class MQTTService:
                 "target_id": self.config.media.warning_sound_uri,
                 "volume": warn_volume,
                 "random": False,
-                "extra_params": {},
+                "extra_params": {
+                    "enqueue": "replace"
+                },
                 "media_type": "music",
                 "message": "Tag not configured in database",
                 "metadata": {

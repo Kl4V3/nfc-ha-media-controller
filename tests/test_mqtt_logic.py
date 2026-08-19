@@ -91,6 +91,7 @@ def test_unconfigured_tag_warning(temp_env):
     assert result["target_player"] == "media_player.kinderzimmer"
     assert result["target_id"] == "http://ha.local/warning.mp3"
     assert result["volume"] == 25
+    assert result["extra_params"] == {"enqueue": "replace"}
     mqtt_service.publish.assert_called_once()
 
 

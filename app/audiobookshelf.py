@@ -520,10 +520,11 @@ class AudiobookshelfClient:
             logger.info(f"-> Auswahl: Folge {b.get('sequence', '?')} ('{b_title}') [Unvollendet bei {progress_ratio:.1%}]")
             break
 
-        # Falls alle Bücher bereits gehört wurden, starte wieder mit dem ersten
+        # Falls alle Bücher bereits gehört wurden, starte wieder mit dem ersten und setze Serie zurück
         if not selected_book:
             selected_book = sorted_books[0]
-            logger.info(f"-> Alle Bücher bereits beendet -> starte Serie von vorne mit Folge {selected_book.get('sequence', 1)}.")
+            logger.info(f"-> Alle Bücher bereits beendet! Starte Serie von vorne mit Folge {selected_book.get('sequence', 1)} und setze Serienfortschritt zurück.")
+            self.reset_series_progress(sorted_books, user_token=user_token)
 
         book_id = selected_book.get("id") or selected_book.get("libraryItemId")
         title = selected_book.get("media", {}).get("metadata", {}).get("title") or selected_book.get("name") or selected_book.get("title") or "Unbekannter Titel"
@@ -538,3 +539,49 @@ class AudiobookshelfClient:
             "sequence": selected_book.get("sequence"),
             "total_books": len(sorted_books)
         }
+
+    def reset_item_progress(self, item_id: str, user_token: Optional[str] = None) -> bool:
+        """
+        Setzt den Fortschritt eines einzelnen Buchs in Audiobookshelf zurück (isFinished=False, progress=0).
+        Versucht DELETE /api/me/progress/:id und PATCH /api/me/progress/:id.
+        """
+        headers = self._get_headers(user_token)
+        url = f"{self.base_url}/api/me/progress/{item_id}"
+        
+        # 1. DELETE Versuch (Löscht gespeicherten Fortschritt)
+        try:
+            resp = requests.delete(url, headers=headers, timeout=self.timeout)
+            if resp.status_code in [200, 204]:
+                logger.debug(f"Fortschritt für Buch '{item_id}' via DELETE gelöscht.")
+                return True
+        except Exception as e:
+            logger.debug(f"DELETE progress {url} fehlgeschlagen: {e}")
+
+        # 2. PATCH Versuch (Setzt isFinished=False & progress=0)
+        try:
+            payload = {
+                "currentTime": 0,
+                "progress": 0,
+                "isFinished": False
+            }
+            resp = requests.patch(url, headers=headers, json=payload, timeout=self.timeout)
+            if resp.status_code in [200, 204]:
+                logger.debug(f"Fortschritt für Buch '{item_id}' via PATCH zurückgesetzt.")
+                return True
+        except Exception as e:
+            logger.debug(f"PATCH progress {url} fehlgeschlagen: {e}")
+
+        return False
+
+    def reset_series_progress(self, books: List[Dict[str, Any]], user_token: Optional[str] = None):
+        """
+        Setzt den Fortschritt aller Bücher einer Serie in Audiobookshelf auf ungehört zurück.
+        """
+        logger.info(f"Setze Fortschritt für alle {len(books)} Bücher der Serie in ABS zurück...")
+        reset_count = 0
+        for b in books:
+            book_id = str(b.get("id") or b.get("libraryItemId") or "")
+            if book_id:
+                if self.reset_item_progress(book_id, user_token=user_token):
+                    reset_count += 1
+        logger.info(f"Serienfortschritt in ABS zurückgesetzt ({reset_count}/{len(books)} Bücher aktualisiert).")

@@ -38,7 +38,7 @@ audiobookshelf:
 # ------------------------------------------------------------------------------
 media:
   # Sound or media URI played when an unconfigured/unknown tag is scanned
-  warning_sound_uri: "http://homeassistant.local:8123/local/sounds/tag_unknown.mp3"
+  warning_sound_uri: "media-source://media_source/local/warningMissingNFC.wav"
   default_volume: 20
   # Integration mode:
   # "mass" = Music Assistant (mass.play_media)
