@@ -100,7 +100,128 @@ class AudiobookshelfClient:
             logger.warning(f"Konnte ABS-Serien nicht abrufen: {e}")
         return all_series
 
-    def get_items_list(self, library_id: Optional[str] = None, user_token: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
+    def search_series(self, query: str, library_id: Optional[str] = None, user_token: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Durchsucht Bibliotheken nach Serien anhand eines Suchbegriffs."""
+        if not query or not query.strip():
+            return self.get_series_list(library_id=library_id, user_token=user_token)
+
+        q_clean = query.strip()
+        q_lower = q_clean.lower()
+        results = []
+        seen_ids = set()
+        try:
+            libraries = [library_id] if library_id else [lib["id"] for lib in self.get_libraries(user_token)]
+            for lib_id in libraries:
+                url = f"{self.base_url}/api/libraries/{lib_id}/search?q={requests.utils.quote(q_clean)}"
+                resp = requests.get(url, headers=self._get_headers(user_token), timeout=self.timeout)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    series_list = data.get("series") or []
+                    for s_entry in series_list:
+                        s = s_entry.get("series") if isinstance(s_entry, dict) and "series" in s_entry else s_entry
+                        if isinstance(s, dict):
+                            s_id = s.get("id")
+                            if s_id and s_id not in seen_ids:
+                                name = s.get("name") or ""
+                                if q_lower in name.lower() or q_lower in s_id.lower():
+                                    seen_ids.add(s_id)
+                                    books = s.get("books", [])
+                                    num_books = s.get("numBooks", len(books))
+                                    results.append({
+                                        "id": s_id,
+                                        "name": name,
+                                        "library_id": lib_id,
+                                        "num_books": num_books
+                                    })
+            # Fallback: Falls /search?q= nichts lieferte, durchsuche alle Serien der Bibliotheken
+            if not results:
+                all_s = self.get_series_list(library_id=library_id, user_token=user_token)
+                for s in all_s:
+                    s_id = s.get("id")
+                    name = s.get("name") or ""
+                    if s_id and s_id not in seen_ids and (q_lower in name.lower() or q_lower in s_id.lower()):
+                        seen_ids.add(s_id)
+                        results.append(s)
+        except Exception as e:
+            logger.warning(f"Fehler bei ABS-Seriensuche nach '{query}': {e}")
+        return results
+
+    def search_items(self, query: str, library_id: Optional[str] = None, user_token: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Durchsucht Bibliotheken nach Hörbüchern / Tracks anhand eines Suchbegriffs."""
+        if not query or not query.strip():
+            return self.get_items_list(library_id=library_id, user_token=user_token, limit=200)
+
+        q_clean = query.strip()
+        q_lower = q_clean.lower()
+        results = []
+        seen_ids = set()
+        try:
+            libraries = [library_id] if library_id else [lib["id"] for lib in self.get_libraries(user_token)]
+            for lib_id in libraries:
+                # 1. Direkter Search-Endpunkt /api/libraries/{id}/search?q=...
+                url = f"{self.base_url}/api/libraries/{lib_id}/search?q={requests.utils.quote(q_clean)}"
+                resp = requests.get(url, headers=self._get_headers(user_token), timeout=self.timeout)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    # ABS gibt book / books / podcast / results zurück
+                    raw_entries = (
+                        data.get("book")
+                        or data.get("books")
+                        or data.get("podcast")
+                        or data.get("results")
+                        or []
+                    )
+                    for entry in raw_entries:
+                        item = entry.get("libraryItem") if isinstance(entry, dict) and "libraryItem" in entry else entry
+                        if isinstance(item, dict):
+                            item_id = item.get("id")
+                            if item_id and item_id not in seen_ids:
+                                media = item.get("media", {})
+                                meta = media.get("metadata", {}) if isinstance(media, dict) else {}
+                                title = meta.get("title") or item.get("name") or "Unbekannt"
+                                author = meta.get("authorName") or meta.get("artist") or ""
+                                # Prüfe ob Query matcht
+                                if q_lower in title.lower() or q_lower in author.lower() or q_lower in item_id.lower():
+                                    seen_ids.add(item_id)
+                                    results.append({
+                                        "id": item_id,
+                                        "title": title,
+                                        "author": author,
+                                        "library_id": lib_id,
+                                        "duration": media.get("duration", 0) if isinstance(media, dict) else 0
+                                    })
+
+            # 2. Fallback: Falls /search?q= in allen Bibliotheken 0 Treffer ergab, filtere get_items_list mit Limit
+            if not results:
+                for lib_id in libraries:
+                    url_items = f"{self.base_url}/api/libraries/{lib_id}/items?limit=200"
+                    resp_items = requests.get(url_items, headers=self._get_headers(user_token), timeout=self.timeout)
+                    if resp_items.status_code == 200:
+                        data_items = resp_items.json()
+                        raw_items = data_items.get("results", []) if isinstance(data_items, dict) else (data_items if isinstance(data_items, list) else [])
+                        for item in raw_items:
+                            if isinstance(item, dict):
+                                item_id = item.get("id")
+                                if item_id and item_id not in seen_ids:
+                                    media = item.get("media", {})
+                                    meta = media.get("metadata", {}) if isinstance(media, dict) else {}
+                                    title = meta.get("title") or item.get("name") or "Unbekannt"
+                                    author = meta.get("authorName") or meta.get("artist") or ""
+                                    # STRIKTES Filtern: nur wenn Suchbegriff im Titel/Autor/ID vorkommt!
+                                    if q_lower in title.lower() or q_lower in author.lower() or q_lower in item_id.lower():
+                                        seen_ids.add(item_id)
+                                        results.append({
+                                            "id": item_id,
+                                            "title": title,
+                                            "author": author,
+                                            "library_id": lib_id,
+                                            "duration": media.get("duration", 0) if isinstance(media, dict) else 0
+                                        })
+        except Exception as e:
+            logger.warning(f"Fehler bei ABS-Hörbuchsuche nach '{query}': {e}")
+        return results
+
+    def get_items_list(self, library_id: Optional[str] = None, user_token: Optional[str] = None, limit: int = 100) -> List[Dict[str, Any]]:
         """Gibt einzelne Hörbücher / Tracks aus den Bibliotheken zurück."""
         all_items = []
         try:

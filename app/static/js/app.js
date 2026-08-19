@@ -232,13 +232,20 @@ document.addEventListener('DOMContentLoaded', () => {
         loadModalAbsContent();
     }
 
+    let modalSearchTimeout = null;
     inputModalAbsSearch.addEventListener('input', () => {
-        renderModalAbsResults();
+        clearTimeout(modalSearchTimeout);
+        modalSearchTimeout = setTimeout(() => {
+            loadModalAbsContent();
+        }, 250);
     });
 
     async function loadModalAbsContent() {
-        elModalAbsResultsList.innerHTML = `<p class="text-muted text-center py-2 text-xs">Lade Inhalte aus allen ABS-Bibliotheken...</p>`;
-        const endpoint = modalAbsCurrentTab === 'series' ? '/api/abs/series' : '/api/abs/items?limit=100';
+        const query = inputModalAbsSearch.value.trim();
+        elModalAbsResultsList.innerHTML = `<p class="text-muted text-center py-2 text-xs">Suche in allen ABS-Bibliotheken...</p>`;
+        const endpoint = modalAbsCurrentTab === 'series' 
+            ? `/api/abs/series${query ? '?q=' + encodeURIComponent(query) : ''}`
+            : `/api/abs/items?limit=200${query ? '&q=' + encodeURIComponent(query) : ''}`;
         try {
             const res = await fetch(endpoint);
             if (res.ok) {
@@ -253,8 +260,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderModalAbsResults() {
-        const query = inputModalAbsSearch.value.toLowerCase().trim();
-        const filtered = absContentList.filter(item => {
+        const query = (inputModalAbsSearch.value || '').toLowerCase().trim();
+        const filtered = (absContentList || []).filter(item => {
+            if (!query) return true;
             const title = (item.name || item.title || '').toLowerCase();
             const id = (item.id || '').toLowerCase();
             const author = (item.author || '').toLowerCase();
@@ -850,13 +858,20 @@ document.addEventListener('DOMContentLoaded', () => {
         loadAbsContent();
     });
 
+    let absExplorerSearchTimeout = null;
     inputAbsSearch.addEventListener('input', () => {
-        renderAbsContentList();
+        clearTimeout(absExplorerSearchTimeout);
+        absExplorerSearchTimeout = setTimeout(() => {
+            loadAbsContent();
+        }, 250);
     });
 
     async function loadAbsContent() {
-        elAbsContentList.innerHTML = `<p class="text-muted text-center py-4">Lade Inhalte aus allen ABS-Bibliotheken...</p>`;
-        const endpoint = absCurrentTab === 'series' ? '/api/abs/series' : '/api/abs/items?limit=100';
+        const query = inputAbsSearch.value.trim();
+        elAbsContentList.innerHTML = `<p class="text-muted text-center py-4">Suche in allen ABS-Bibliotheken...</p>`;
+        const endpoint = absCurrentTab === 'series' 
+            ? `/api/abs/series${query ? '?q=' + encodeURIComponent(query) : ''}`
+            : `/api/abs/items?limit=200${query ? '&q=' + encodeURIComponent(query) : ''}`;
         try {
             const res = await fetch(endpoint);
             if (res.ok) {
@@ -871,8 +886,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderAbsContentList() {
-        const query = inputAbsSearch.value.toLowerCase().trim();
-        const filtered = absContentList.filter(item => {
+        const query = (inputAbsSearch.value || '').toLowerCase().trim();
+        const filtered = (absContentList || []).filter(item => {
+            if (!query) return true;
             const title = (item.name || item.title || '').toLowerCase();
             const id = (item.id || '').toLowerCase();
             const author = (item.author || '').toLowerCase();
