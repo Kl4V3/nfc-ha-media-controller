@@ -26,6 +26,12 @@ audiobookshelf:
   base_url: "http://192.168.1.50:13378" # Audiobookshelf server base URL
   default_token: ""                     # Fallback/Admin API Token (if reader has no specific token)
   timeout: 3.0                          # Mandatory timeout in seconds (prevents thread blocking)
+  # Optional Music Assistant (MASS) ABS Provider Prefix / Instance ID:
+  # Example provider_prefix: "audiobookshelf--xPQT49LN"
+  # Example mass_instance_id: "xPQT49LN"
+  # If left empty, defaults to "audiobookshelf" (e.g. audiobookshelf://audiobook/{id})
+  provider_prefix: ""
+  mass_instance_id: ""
 
 # ------------------------------------------------------------------------------
 # Media & Home Assistant Default Values

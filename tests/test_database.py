@@ -84,12 +84,14 @@ def test_readers_crud(temp_db):
         "reader_id": "reader_kizi",
         "target_player": "media_player.kinderzimmer",
         "abs_user_token": "token_jonas",
+        "abs_provider_prefix": "audiobookshelf--xPQT49LN",
         "notes": "Kinderzimmer Jonas"
     }
     saved = upsert_reader(temp_db, reader_data)
     assert saved["reader_id"] == "reader_kizi"
     assert saved["target_player"] == "media_player.kinderzimmer"
     assert saved["abs_user_token"] == "token_jonas"
+    assert saved["abs_provider_prefix"] == "audiobookshelf--xPQT49LN"
 
     readers = get_all_readers(temp_db)
     assert len(readers) == 1

@@ -23,17 +23,24 @@ def init_db(db_path: str):
     conn = get_db_connection(db_path)
     try:
         with conn:
-            # Tabelle readers (Mapping von reader_id -> target_player + abs_user_token)
+            # Tabelle readers (Mapping von reader_id -> target_player + abs_user_token + abs_provider_prefix)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS readers (
                     reader_id TEXT PRIMARY KEY,
                     target_player TEXT NOT NULL,
                     abs_user_token TEXT,
+                    abs_provider_prefix TEXT,
                     notes TEXT,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+
+            # Migration falls Spalten in älterer DB-Version fehlen
+            try:
+                conn.execute("ALTER TABLE readers ADD COLUMN abs_provider_prefix TEXT")
+            except Exception:
+                pass
 
             # Tabelle tags (Konfiguration der RFID/NFC-Tags)
             conn.execute("""
@@ -274,20 +281,22 @@ def upsert_reader(db_path: str, reader_data: Dict[str, Any]) -> Dict[str, Any]:
     reader_id = reader_data.get("reader_id")
     target_player = reader_data.get("target_player", "")
     abs_user_token = reader_data.get("abs_user_token", "")
+    abs_provider_prefix = reader_data.get("abs_provider_prefix", "")
     notes = reader_data.get("notes", "")
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
     try:
         with conn:
             conn.execute("""
-                INSERT INTO readers (reader_id, target_player, abs_user_token, notes, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO readers (reader_id, target_player, abs_user_token, abs_provider_prefix, notes, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(reader_id) DO UPDATE SET
                     target_player = excluded.target_player,
                     abs_user_token = excluded.abs_user_token,
+                    abs_provider_prefix = excluded.abs_provider_prefix,
                     notes = excluded.notes,
                     updated_at = excluded.updated_at
-            """, (reader_id, target_player, abs_user_token, notes, now, now))
+            """, (reader_id, target_player, abs_user_token, abs_provider_prefix, notes, now, now))
         return get_reader_by_id(db_path, reader_id)
     finally:
         conn.close()

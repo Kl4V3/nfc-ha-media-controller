@@ -40,6 +40,7 @@ class ReaderModel(BaseModel):
     reader_id: str = Field(..., min_length=1)
     target_player: str = Field(..., min_length=1)
     abs_user_token: Optional[str] = Field(default="")
+    abs_provider_prefix: Optional[str] = Field(default="")
     notes: Optional[str] = Field(default="")
 
 

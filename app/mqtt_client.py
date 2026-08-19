@@ -204,6 +204,34 @@ class MQTTService:
         except Exception as e:
             logger.error(f"Unerwarteter Fehler bei MQTT-Nachrichtenverarbeitung: {e}", exc_info=True)
 
+    def _build_abs_uri(self, book_id: str, reader_prefix: Optional[str] = None) -> str:
+        """
+        Baut die standardisierte Music Assistant / ABS URI für ein Hörbuch / Track.
+        Unterstützt:
+        - Spezifischen Provider-Prefix (z. B. 'audiobookshelf--xPQT49LN')
+        - Instance ID (z. B. 'xPQT49LN')
+        - Default Fallback ('audiobookshelf://audiobook/{id}')
+        """
+        clean_id = (book_id or "").strip()
+        if "://" in clean_id:
+            # Falls bereits eine volle URI angegeben ist (z. B. library://audiobook/2181)
+            return clean_id
+
+        prefix = (reader_prefix or "").strip() or (self.config.audiobookshelf.provider_prefix or "").strip()
+        instance_id = (self.config.audiobookshelf.mass_instance_id or "").strip()
+
+        if prefix:
+            prefix_clean = prefix.rstrip(":/")
+            if prefix_clean.endswith("://audiobook") or prefix_clean.endswith("://track"):
+                return f"{prefix_clean}/{clean_id}"
+            if "://" in prefix_clean:
+                return f"{prefix_clean}/{clean_id}"
+            return f"{prefix_clean}://audiobook/{clean_id}"
+        elif instance_id:
+            return f"audiobookshelf--{instance_id}://audiobook/{clean_id}"
+        else:
+            return f"audiobookshelf://audiobook/{clean_id}"
+
     def process_rfid_event(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Zentrale Geschäftslogik für eingehende RFID-Events (Auflegen/Entfernen).
@@ -224,13 +252,16 @@ class MQTTService:
         if reader and reader.get("target_player"):
             target_player = reader["target_player"]
             abs_user_token = reader.get("abs_user_token") or self.config.audiobookshelf.default_token
+            abs_provider_prefix = reader.get("abs_provider_prefix") or self.config.audiobookshelf.provider_prefix
         else:
             target_player = f"media_player.{reader_id}"
             abs_user_token = self.config.audiobookshelf.default_token
+            abs_provider_prefix = self.config.audiobookshelf.provider_prefix
             upsert_reader(db_path, {
                 "reader_id": reader_id,
                 "target_player": target_player,
                 "abs_user_token": "",
+                "abs_provider_prefix": "",
                 "notes": f"Auto-discovered ({time.strftime('%Y-%m-%d %H:%M')})"
             })
             logger.info(f"Auto-Discovery: Neuer Reader '{reader_id}' registriert -> Default Player: '{target_player}'")
@@ -336,61 +367,79 @@ class MQTTService:
         }
 
         normalized_action = action_type.lower()
-        media_type = "track"
+        media_type = "audiobook"
 
         # 4a. Audiobookshelf Serie (dynamische Auflösung des nächsten unfertigen Buchs)
         if normalized_action in ["serie", "abs_serie"]:
-            series_id = target_id
+            series_id = target_id.split("/")[-1]
             library_id = (tag.get("library_id") or "").strip() or None
             logger.info(f"Ermittle nächstes Buch für ABS-Serie '{series_id}' (Library: '{library_id or 'Auto'}', User-Token: {'vorhanden' if abs_user_token else 'fehlt'})...")
             book_info = self.abs_client.resolve_next_book_in_series(series_id, library_id=library_id, user_token=abs_user_token)
 
             if book_info and book_info.get("book_id"):
                 book_id = book_info["book_id"]
-                target_id = f"audiobookshelf://track/{book_id}"
+                target_id = self._build_abs_uri(book_id, reader_prefix=abs_provider_prefix)
                 metadata["title"] = book_info.get("title")
                 metadata["series_name"] = book_info.get("series_name")
                 metadata["sequence"] = book_info.get("sequence")
                 metadata["total_books"] = book_info.get("total_books")
-                logger.info(f"ABS Serie '{book_info.get('series_name')}' aufgelöst: '{book_info.get('title')}' (ID: {book_id})")
+                logger.info(f"ABS Serie '{book_info.get('series_name')}' aufgelöst: '{book_info.get('title')}' -> URI: {target_id}")
             else:
-                if not (target_id.startswith("audiobookshelf://") or target_id.startswith("mass://")):
-                    target_id = f"audiobookshelf://track/{target_id}"
+                clean_series_id = target_id.split("/")[-1]
+                target_id = self._build_abs_uri(clean_series_id, reader_prefix=abs_provider_prefix)
                 logger.warning(f"Konnte nächstes Buch für Serie '{series_id}' nicht über ABS auflösen. Sende URI: {target_id}")
 
             action_type_out = "media"
-            media_type = "track"
+            media_type = "audiobook"
 
         # 4b. Einzelnes Hörbuch
         elif normalized_action in ["hoerbuch", "hörbuch", "audiobook"]:
             action_type_out = "media"
-            media_type = "track"
-            if not (target_id.startswith("audiobookshelf://") or target_id.startswith("mass://") or target_id.startswith("http")):
-                target_id = f"audiobookshelf://track/{target_id}"
+            media_type = "audiobook"
+            target_clean = target_id.strip()
+            if target_clean.startswith("mass://audiobook/"):
+                target_id = target_clean.replace("mass://audiobook/", "library://audiobook/")
+            elif target_clean.startswith("library://") or target_clean.startswith("spotify://") or target_clean.startswith("http"):
+                target_id = target_clean
+            else:
+                clean_item_id = target_clean.split("/")[-1]
+                target_id = self._build_abs_uri(clean_item_id, reader_prefix=abs_provider_prefix)
 
-        # 4c. Album (Music Assistant)
+        # 4c. Album (Music Assistant Library)
         elif normalized_action in ["album"]:
             action_type_out = "media"
             media_type = "album"
-            if not (target_id.startswith("mass://") or target_id.startswith("spotify://") or target_id.startswith("http")):
-                target_id = f"mass://album/{target_id}"
+            target_clean = target_id.strip()
+            if target_clean.startswith("mass://album/"):
+                target_id = target_clean.replace("mass://album/", "library://album/")
+            elif target_clean.startswith("library://") or target_clean.startswith("spotify://") or target_clean.startswith("http"):
+                target_id = target_clean
+            else:
+                clean_album_id = target_clean.split("/")[-1]
+                target_id = f"library://album/{clean_album_id}"
 
-        # 4d. Playlist (Music Assistant)
+        # 4d. Playlist (Music Assistant Library)
         elif normalized_action in ["playlist"]:
             action_type_out = "media"
             media_type = "playlist"
-            if not (target_id.startswith("mass://") or target_id.startswith("spotify://") or target_id.startswith("http")):
-                target_id = f"mass://playlist/{target_id}"
+            target_clean = target_id.strip()
+            if target_clean.startswith("mass://playlist/"):
+                target_id = target_clean.replace("mass://playlist/", "library://playlist/")
+            elif target_clean.startswith("library://") or target_clean.startswith("spotify://") or target_clean.startswith("http"):
+                target_id = target_clean
+            else:
+                clean_pl_id = target_clean.split("/")[-1]
+                target_id = f"library://playlist/{clean_pl_id}"
 
-        # 4d. Lichtsteuerung
+        # 4e. Lichtsteuerung
         elif normalized_action in ["licht", "light"]:
             action_type_out = "light"
 
-        # 4e. Szenensteuerung
+        # 4f. Szenensteuerung
         elif normalized_action in ["szene", "scene"]:
             action_type_out = "scene"
 
-        # 4f. Benutzerdefiniert
+        # 4g. Benutzerdefiniert
         else:
             action_type_out = action_type.lower()
 

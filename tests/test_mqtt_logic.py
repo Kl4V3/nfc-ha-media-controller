@@ -129,8 +129,9 @@ def test_configured_abs_series_tag(temp_env):
 
     assert result["status"] == "scanned"
     assert result["action_type"] == "media"
+    assert result["media_type"] == "audiobook"
     assert result["target_player"] == "media_player.kinderzimmer"
-    assert "book_folge_42" in result["target_id"]
+    assert result["target_id"] == "audiobookshelf://audiobook/book_folge_42"
     assert result["volume"] == 30
     abs_client.resolve_next_book_in_series.assert_called_once_with("ser_bibi", library_id="lib_bibi", user_token="token_kizi")
     mqtt_service.publish.assert_called_once()
@@ -161,6 +162,71 @@ def test_configured_album_tag(temp_env):
     assert result["action_type"] == "media"
     assert result["media_type"] == "album"
     assert result["target_player"] == "media_player.kinderzimmer"
-    assert result["target_id"] == "mass://album/rock_classics"
+    assert result["target_id"] == "library://album/rock_classics"
     assert result["volume"] == 40
+
+
+def test_configured_playlist_tag(temp_env):
+    mqtt_service = temp_env["mqtt_service"]
+    db_path = temp_env["db_path"]
+
+    upsert_tag(db_path, {
+        "tag_id": "PLAYLIST_TAG",
+        "alias": "Favorite Songs",
+        "action_type": "Playlist",
+        "target_id": "30",
+        "volume": 35,
+        "random": True
+    })
+
+    event_data = {
+        "tag_id": "PLAYLIST_TAG",
+        "reader_id": "reader_kizi",
+        "status": "scanned"
+    }
+
+    result = mqtt_service.process_rfid_event(event_data)
+
+    assert result["status"] == "scanned"
+    assert result["action_type"] == "media"
+    assert result["media_type"] == "playlist"
+    assert result["target_player"] == "media_player.kinderzimmer"
+    assert result["target_id"] == "library://playlist/30"
+    assert result["volume"] == 35
+
+
+def test_abs_custom_provider_prefix(temp_env):
+    mqtt_service = temp_env["mqtt_service"]
+    abs_client = temp_env["abs_client"]
+    db_path = temp_env["db_path"]
+
+    # Reader mit spezifischem ABS Provider Prefix
+    upsert_reader(db_path, {
+        "reader_id": "reader_custom_abs",
+        "target_player": "media_player.wz",
+        "abs_user_token": "tok_wz",
+        "abs_provider_prefix": "audiobookshelf--xPQT49LN"
+    })
+
+    upsert_tag(db_path, {
+        "tag_id": "ABS_TAG",
+        "alias": "Single Audiobook",
+        "action_type": "Hoerbuch",
+        "target_id": "abe67622-a0af-42f7-9d53-35e0ea59dd23",
+        "volume": 20
+    })
+
+    event_data = {
+        "tag_id": "ABS_TAG",
+        "reader_id": "reader_custom_abs",
+        "status": "scanned"
+    }
+
+    result = mqtt_service.process_rfid_event(event_data)
+
+    assert result["status"] == "scanned"
+    assert result["action_type"] == "media"
+    assert result["media_type"] == "audiobook"
+    assert result["target_id"] == "audiobookshelf--xPQT49LN://audiobook/abe67622-a0af-42f7-9d53-35e0ea59dd23"
+
 

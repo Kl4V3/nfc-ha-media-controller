@@ -78,6 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const inputReaderId = document.getElementById('reader-id-input');
     const inputReaderTargetPlayer = document.getElementById('reader-target-player');
     const inputReaderAbsToken = document.getElementById('reader-abs-token');
+    const inputReaderAbsPrefix = document.getElementById('reader-abs-prefix');
     const inputReaderNotes = document.getElementById('reader-notes');
 
     const elPayloadModal = document.getElementById('payload-modal');
@@ -482,14 +483,18 @@ document.addEventListener('DOMContentLoaded', () => {
         elReadersEmptyState.classList.add('hidden');
         elReadersTableBody.innerHTML = readersList.map(reader => {
             const tokenBadge = reader.abs_user_token
-                ? `<span class="badge badge-configured">Gesetzt</span>`
+                ? `<span class="badge badge-configured" title="User-Token gesetzt">User-Token</span>`
                 : `<span class="badge badge-type text-muted">Standard</span>`;
+
+            const prefixInfo = reader.abs_provider_prefix
+                ? `<div class="text-xs font-mono text-muted" style="font-size: 10px;" title="ABS Prefix">${escapeHtml(reader.abs_provider_prefix)}</div>`
+                : '';
 
             return `
                 <tr>
                     <td class="font-mono"><strong>${escapeHtml(reader.reader_id)}</strong></td>
                     <td class="font-mono">${escapeHtml(reader.target_player)}</td>
-                    <td>${tokenBadge}</td>
+                    <td>${tokenBadge}${prefixInfo}</td>
                     <td>${escapeHtml(reader.notes || '—')}</td>
                     <td class="actions-cell">
                         <button class="btn btn-sm btn-secondary" onclick="window.editReader('${escapeHtml(reader.reader_id)}')">
@@ -739,6 +744,7 @@ document.addEventListener('DOMContentLoaded', () => {
         inputReaderId.disabled = false;
         inputReaderTargetPlayer.value = 'media_player.';
         inputReaderAbsToken.value = '';
+        inputReaderAbsPrefix.value = '';
         inputReaderNotes.value = '';
         elReaderModal.classList.remove('hidden');
     });
@@ -752,6 +758,7 @@ document.addEventListener('DOMContentLoaded', () => {
         inputReaderId.disabled = true;
         inputReaderTargetPlayer.value = reader.target_player || '';
         inputReaderAbsToken.value = reader.abs_user_token || '';
+        inputReaderAbsPrefix.value = reader.abs_provider_prefix || '';
         inputReaderNotes.value = reader.notes || '';
         elReaderModal.classList.remove('hidden');
     };
@@ -773,6 +780,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const readerId = inputReaderId.value.trim();
         const targetPlayer = inputReaderTargetPlayer.value.trim();
         const absToken = inputReaderAbsToken.value.trim();
+        const absPrefix = inputReaderAbsPrefix.value.trim();
         const notes = inputReaderNotes.value.trim();
 
         if (!readerId || !targetPlayer) {
@@ -784,6 +792,7 @@ document.addEventListener('DOMContentLoaded', () => {
             reader_id: readerId,
             target_player: targetPlayer,
             abs_user_token: absToken,
+            abs_provider_prefix: absPrefix,
             notes: notes
         };
 

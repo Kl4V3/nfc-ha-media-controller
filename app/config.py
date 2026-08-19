@@ -22,6 +22,8 @@ class AudiobookshelfConfig(BaseModel):
     base_url: str = Field(default="http://localhost:13378")
     default_token: str = Field(default="")
     timeout: float = Field(default=3.0)
+    provider_prefix: str = Field(default="")  # z. B. "audiobookshelf--xPQT49LN"
+    mass_instance_id: str = Field(default="")  # z. B. "xPQT49LN"
 
 
 class MediaConfig(BaseModel):
@@ -125,6 +127,14 @@ def load_config() -> AppConfig:
             config.audiobookshelf.timeout = float(os.getenv("ABS_TIMEOUT"))
         except ValueError:
             pass
+    if os.getenv("ABS_PROVIDER_PREFIX") or os.getenv("AUDIOBOOKSHELF_PROVIDER_PREFIX") or os.getenv("MASS_ABS_PROVIDER_PREFIX"):
+        config.audiobookshelf.provider_prefix = (
+            os.getenv("ABS_PROVIDER_PREFIX")
+            or os.getenv("AUDIOBOOKSHELF_PROVIDER_PREFIX")
+            or os.getenv("MASS_ABS_PROVIDER_PREFIX")
+        )
+    if os.getenv("MASS_ABS_INSTANCE_ID") or os.getenv("ABS_INSTANCE_ID"):
+        config.audiobookshelf.mass_instance_id = os.getenv("MASS_ABS_INSTANCE_ID") or os.getenv("ABS_INSTANCE_ID")
 
     if os.getenv("WARNING_SOUND_URI"):
         config.media.warning_sound_uri = os.getenv("WARNING_SOUND_URI")
