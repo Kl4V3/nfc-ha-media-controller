@@ -1,6 +1,9 @@
+import re
 import logging
+from pathlib import Path
 from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi.responses import PlainTextResponse, Response
 from pydantic import BaseModel, Field
 
 from app.config import AppConfig
@@ -300,3 +303,214 @@ def debug_abs_series(req_data: AbsDebugRequest, request: Request):
         "resolution_result": resolution,
         "books": books_breakdown
     }
+
+
+# ==============================================================================
+# FIRMWARE & FLASHER ENDPOINTS
+# ==============================================================================
+
+FIRMWARE_TEMPLATES = {
+    "m5atom_lite_rfid": {
+        "id": "m5atom_lite_rfid",
+        "name": "M5Stack ATOM Lite + RFID 2 Unit (Grove I2C)",
+        "recommended": True,
+        "filename": "esphome_m5atom_lite_rfid.yaml",
+        "description": "Kompakter ESP32 Controller mit integrierter RGB-Status-LED und Plug & Play Grove-Kabel.",
+        "features": [
+            "Plug & Play Grove-Kabelanschluss (kein Löten)",
+            "RGB NeoPixel Status-LED für visuelles Feedback (Grün/Blau/Cyan/Orange/Rot)",
+            "Hardware-Button für Status-Ping & Neustart",
+            "Toniebox Präsenzerkennung (Auflegen = Play, Wegnehmen = Stop)",
+            "Improv Wi-Fi & Web-Serial Flashing Support"
+        ],
+        "pinout": [
+            {"pin": "Grove Gelb", "signal": "I2C SDA", "gpio": "GPIO 26"},
+            {"pin": "Grove Weiß", "signal": "I2C SCL", "gpio": "GPIO 32"},
+            {"pin": "Grove Rot", "signal": "Power (5V)", "gpio": "5V"},
+            {"pin": "Grove Schwarz", "signal": "GND", "gpio": "GND"},
+            {"pin": "Status LED", "signal": "WS2812 RGB", "gpio": "GPIO 27"},
+            {"pin": "Front Button", "signal": "Push Button", "gpio": "GPIO 39"}
+        ],
+        "led_states": [
+            {"color": "#10b981", "name": "Grün", "state": "Verbunden & Bereit (Normalbetrieb)"},
+            {"color": "#3b82f6", "name": "Blau", "state": "Verbindungsaufbau zu WLAN / MQTT"},
+            {"color": "#06b6d4", "name": "Cyan", "state": "Tag erkannt (Play-Befehl gesendet)"},
+            {"color": "#f97316", "name": "Orange", "state": "Tag entfernt (Stop-Befehl gesendet)"},
+            {"color": "#ef4444", "name": "Rot", "state": "Verbindungsfehler (WLAN/MQTT getrennt)"}
+        ]
+    },
+    "esp32_pn532_i2c": {
+        "id": "esp32_pn532_i2c",
+        "name": "ESP32 NodeMCU + PN532 NFC (I2C)",
+        "recommended": False,
+        "filename": "esphome_pn532_i2c.yaml",
+        "description": "Klassisches ESP32 Entwicklungsboard mit PN532 NFC Modul über I2C Bus.",
+        "features": [
+            "Hohe NFC-Reichweite",
+            "I2C Bus Anbindung",
+            "Toniebox Präsenzerkennung (Auflegen/Wegnehmen)"
+        ],
+        "pinout": [
+            {"pin": "SDA", "signal": "I2C SDA", "gpio": "GPIO 21"},
+            {"pin": "SCL", "signal": "I2C SCL", "gpio": "GPIO 22"},
+            {"pin": "VCC", "signal": "Power (3.3V/5V)", "gpio": "3.3V oder 5V"},
+            {"pin": "GND", "signal": "GND", "gpio": "GND"}
+        ],
+        "led_states": []
+    },
+    "esp32_rc522_spi": {
+        "id": "esp32_rc522_spi",
+        "name": "ESP32 NodeMCU + RC522 RFID (SPI)",
+        "recommended": False,
+        "filename": "esphome_rc522_spi.yaml",
+        "description": "ESP32 Entwicklungsboard mit RC522 RFID Modul über SPI Bus.",
+        "features": [
+            "Kostengünstiges RFID Setup",
+            "SPI Bus Anbindung",
+            "Toniebox Präsenzerkennung (Auflegen/Wegnehmen)"
+        ],
+        "pinout": [
+            {"pin": "SCK", "signal": "SPI Clock", "gpio": "GPIO 18"},
+            {"pin": "MOSI", "signal": "SPI MOSI", "gpio": "GPIO 23"},
+            {"pin": "MISO", "signal": "SPI MISO", "gpio": "GPIO 19"},
+            {"pin": "SDA / CS", "signal": "Chip Select", "gpio": "GPIO 5"},
+            {"pin": "RST", "signal": "Reset", "gpio": "GPIO 22"},
+            {"pin": "3.3V", "signal": "Power", "gpio": "3.3V"},
+            {"pin": "GND", "signal": "GND", "gpio": "GND"}
+        ],
+        "led_states": []
+    }
+}
+
+
+def find_template_file(filename: str) -> Optional[Path]:
+    """Sucht nach einer ESPHome Template-Datei in den typischen Pfaden."""
+    search_dirs = [
+        Path("/app/esphome"),
+        Path("./esphome"),
+        Path(__file__).parent.parent.parent / "esphome",
+        Path(__file__).parent.parent / "esphome",
+    ]
+    for d in search_dirs:
+        candidate = d / filename
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def substitute_yaml(template_content: str, substitutions: Dict[str, str]) -> str:
+    """Ersetzt substitutions im ESPHome YAML sauber und erhält alle Kommentare."""
+    content = template_content
+    for k, v in substitutions.items():
+        safe_v = str(v).replace('"', '\\"')
+        content = re.sub(
+            rf'(?m)^(\s*{re.escape(k)}:\s*)[^\n]+',
+            rf'\1"{safe_v}"',
+            content
+        )
+    return content
+
+
+@api_router.get("/firmware/templates")
+def list_firmware_templates():
+    """Liefert alle verfügbaren Hardware- und Firmware-Profile."""
+    return list(FIRMWARE_TEMPLATES.values())
+
+
+@api_router.get("/firmware/generate-yaml")
+def generate_firmware_yaml(
+    request: Request,
+    hardware_type: str = "m5atom_lite_rfid",
+    reader_id: Optional[str] = None,
+    device_name: Optional[str] = None,
+    friendly_name: Optional[str] = None,
+    wifi_ssid: Optional[str] = None,
+    wifi_password: Optional[str] = None,
+    mqtt_broker: Optional[str] = None,
+    mqtt_port: Optional[int] = None,
+    mqtt_user: Optional[str] = None,
+    mqtt_password: Optional[str] = None,
+    download: bool = False
+):
+    """Generiert eine maßgeschneiderte ESPHome-YAML mit den Docker MQTT-Zugangsdaten."""
+    config: AppConfig = request.app.state.config
+
+    if hardware_type not in FIRMWARE_TEMPLATES:
+        raise HTTPException(status_code=400, detail=f"Unbekannter Hardware-Typ: {hardware_type}")
+
+    tmpl_info = FIRMWARE_TEMPLATES[hardware_type]
+    tmpl_path = find_template_file(tmpl_info["filename"])
+    if not tmpl_path:
+        raise HTTPException(status_code=404, detail=f"Template-Datei {tmpl_info['filename']} nicht gefunden.")
+
+    with open(tmpl_path, "r", encoding="utf-8") as f:
+        template_content = f.read()
+
+    # Standardwerte aus Config / Parametern ableiten
+    final_reader_id = (reader_id or "reader_atom_1").strip()
+    clean_dev_id = re.sub(r'[^a-zA-Z0-9_-]', '-', final_reader_id.lower()).replace('_', '-')
+    
+    final_device_name = (device_name or f"nfc-{clean_dev_id}").strip()
+    final_friendly_name = (friendly_name or f"NFC Reader {final_reader_id.replace('_', ' ').title()}").strip()
+
+    final_mqtt_broker = (mqtt_broker if mqtt_broker is not None else config.mqtt.broker) or "192.168.1.50"
+    final_mqtt_port = mqtt_port if mqtt_port is not None else config.mqtt.port
+    final_mqtt_user = (mqtt_user if mqtt_user is not None else (config.mqtt.username or ""))
+    final_mqtt_pass = (mqtt_password if mqtt_password is not None else (config.mqtt.password or ""))
+
+    final_wifi_ssid = (wifi_ssid or "YourWiFiSSID").strip()
+    final_wifi_pass = (wifi_password or "YourWiFiPassword").strip()
+
+    subs = {
+        "device_name": final_device_name,
+        "friendly_name": final_friendly_name,
+        "reader_id": final_reader_id,
+        "mqtt_broker": final_mqtt_broker,
+        "mqtt_port": str(final_mqtt_port),
+        "mqtt_user": final_mqtt_user,
+        "mqtt_password": final_mqtt_pass,
+        "wifi_ssid": final_wifi_ssid,
+        "wifi_password": final_wifi_pass,
+    }
+
+    rendered_yaml = substitute_yaml(template_content, subs)
+    filename = f"esphome_{final_reader_id}.yaml"
+
+    if download:
+        return PlainTextResponse(
+            rendered_yaml,
+            media_type="application/x-yaml",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+
+    return {
+        "yaml": rendered_yaml,
+        "filename": filename,
+        "hardware_type": hardware_type,
+        "reader_id": final_reader_id,
+        "substitutions": subs
+    }
+
+
+@api_router.get("/firmware/manifest/{hardware_type}")
+def get_firmware_manifest(hardware_type: str):
+    """Liefert ein ESP Web Tools Manifest für Browser-Flashen."""
+    if hardware_type not in FIRMWARE_TEMPLATES:
+        raise HTTPException(status_code=400, detail=f"Unbekannter Hardware-Typ: {hardware_type}")
+
+    tmpl_info = FIRMWARE_TEMPLATES[hardware_type]
+    return {
+        "name": tmpl_info["name"],
+        "version": "0.3.0",
+        "home_assistant_domain": "esphome",
+        "new_install_prompt_erase": True,
+        "builds": [
+            {
+                "chipFamily": "ESP32",
+                "parts": [
+                    {"path": f"/static/firmware/{hardware_type}/firmware.bin", "offset": 0}
+                ]
+            }
+        ]
+    }
+

@@ -104,6 +104,25 @@ document.addEventListener('DOMContentLoaded', () => {
     const inputAbsSearch = document.getElementById('abs-search-input');
     const elAbsContentList = document.getElementById('abs-content-list');
 
+    // DOM Elements - Firmware & YAML Generator
+    let firmwareTemplates = [];
+    const flasherHwSelect = document.getElementById('flasher-hw-select');
+    const flasherReaderSelect = document.getElementById('flasher-reader-select');
+    const flasherReaderIdInput = document.getElementById('flasher-reader-id-input');
+    const flasherWifiSsid = document.getElementById('flasher-wifi-ssid');
+    const flasherWifiPass = document.getElementById('flasher-wifi-pass');
+    const flasherMqttBroker = document.getElementById('flasher-mqtt-broker');
+    const flasherMqttPort = document.getElementById('flasher-mqtt-port');
+    const btnDownloadYaml = document.getElementById('btn-download-yaml');
+    const btnCopyYaml = document.getElementById('btn-copy-yaml');
+    const flasherYamlPreview = document.getElementById('flasher-yaml-preview');
+    const yamlFilenameBadge = document.getElementById('yaml-filename-badge');
+    const flasherHwName = document.getElementById('flasher-hw-name');
+    const flasherHwDesc = document.getElementById('flasher-hw-desc');
+    const flasherPinoutTable = document.getElementById('flasher-pinout-table');
+    const flasherLedGuideSection = document.getElementById('flasher-led-guide-section');
+    const flasherLedGuideList = document.getElementById('flasher-led-guide-list');
+
     // =========================================================================
     // INITIALIZATION & TAB NAVIGATION
     // =========================================================================
@@ -123,6 +142,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 loadHistory();
             } else if (btn.dataset.tab === 'tools-tab') {
                 loadAbsContent();
+            } else if (btn.dataset.tab === 'flasher-tab') {
+                loadFirmwareTemplates();
+                updateFlasherReadersList();
+                generateYamlPreview();
             }
         });
     });
@@ -342,6 +365,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (res.ok) {
                 readersList = await res.json();
                 renderReadersTable();
+                updateFlasherReadersList();
             }
         } catch (e) {
             console.error('Fehler beim Laden der Reader:', e);
@@ -373,6 +397,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                     elStatusMqtt.className = 'status-indicator status-disconnected';
                     elStatusMqtt.querySelector('.label').textContent = `MQTT: Getrennt`;
+                }
+
+                // Populate Flasher MQTT Fields
+                if (flasherMqttBroker && flasherMqttPort) {
+                    flasherMqttBroker.value = data.mqtt.broker || 'localhost';
+                    flasherMqttPort.value = data.mqtt.port || 1883;
                 }
 
                 // ABS
@@ -1016,6 +1046,190 @@ document.addEventListener('DOMContentLoaded', () => {
             btnLiveEdit.classList.remove('hidden');
             btnLiveEdit.onclick = () => window.editTag(event.tag_id);
         }
+    }
+
+    // =========================================================================
+    // FIRMWARE & FLASHER LOGIC
+    // =========================================================================
+
+    async function loadFirmwareTemplates() {
+        try {
+            const res = await fetch('/api/firmware/templates');
+            if (res.ok) {
+                firmwareTemplates = await res.json();
+                if (flasherHwSelect) {
+                    const currentVal = flasherHwSelect.value;
+                    flasherHwSelect.innerHTML = firmwareTemplates.map(t => 
+                        `<option value="${t.id}" ${t.id === currentVal ? 'selected' : (t.recommended && !currentVal ? 'selected' : '')}>
+                            ${t.recommended ? '⭐ ' : ''}${escapeHtml(t.name)}
+                        </option>`
+                    ).join('');
+                }
+                updateHardwareDetails();
+            }
+        } catch (e) {
+            console.error('Fehler beim Laden der Firmware-Templates:', e);
+        }
+    }
+
+    function updateFlasherReadersList() {
+        if (!flasherReaderSelect) return;
+        const currentSelected = flasherReaderSelect.value;
+        let html = '<option value="__custom__">➕ Neuer / Freier Reader...</option>';
+        readersList.forEach(r => {
+            html += `<option value="${escapeHtml(r.reader_id)}">${escapeHtml(r.reader_id)} (${escapeHtml(r.target_player)})</option>`;
+        });
+        flasherReaderSelect.innerHTML = html;
+        if (currentSelected && currentSelected !== '__custom__') {
+            flasherReaderSelect.value = currentSelected;
+        }
+    }
+
+    if (flasherReaderSelect) {
+        flasherReaderSelect.addEventListener('change', () => {
+            if (flasherReaderSelect.value === '__custom__') {
+                flasherReaderIdInput.disabled = false;
+                flasherReaderIdInput.focus();
+            } else {
+                flasherReaderIdInput.value = flasherReaderSelect.value;
+                flasherReaderIdInput.disabled = false;
+            }
+            generateYamlPreview();
+        });
+    }
+
+    function getSelectedHardwareProfile() {
+        const hwId = flasherHwSelect ? flasherHwSelect.value : 'm5atom_lite_rfid';
+        return firmwareTemplates.find(t => t.id === hwId) || firmwareTemplates[0] || null;
+    }
+
+    function updateHardwareDetails() {
+        const profile = getSelectedHardwareProfile();
+        if (!profile) return;
+
+        if (flasherHwName) flasherHwName.textContent = profile.name;
+        if (flasherHwDesc) flasherHwDesc.textContent = profile.description;
+
+        // Render Pinout Table
+        if (flasherPinoutTable) {
+            if (profile.pinout && profile.pinout.length > 0) {
+                let tableHtml = `<table class="pinout-table-compact">
+                    <thead><tr><th>Pin / Anschluss</th><th>Signal / Funktion</th><th>ESP32 GPIO</th></tr></thead><tbody>`;
+                profile.pinout.forEach(p => {
+                    tableHtml += `<tr>
+                        <td><strong>${escapeHtml(p.pin)}</strong></td>
+                        <td>${escapeHtml(p.signal)}</td>
+                        <td><code class="font-mono">${escapeHtml(p.gpio)}</code></td>
+                    </tr>`;
+                });
+                tableHtml += `</tbody></table>`;
+                flasherPinoutTable.innerHTML = tableHtml;
+            } else {
+                flasherPinoutTable.innerHTML = `<p class="text-xs text-muted">Keine Pinout-Details vorhanden.</p>`;
+            }
+        }
+
+        // Render LED Guide
+        if (flasherLedGuideSection) {
+            if (profile.led_states && profile.led_states.length > 0) {
+                flasherLedGuideSection.style.display = 'block';
+                if (flasherLedGuideList) {
+                    flasherLedGuideList.innerHTML = profile.led_states.map(s => `
+                        <div class="led-guide-item">
+                            <span class="led-dot" style="background: ${s.color}; color: ${s.color};"></span>
+                            <span class="led-name">${escapeHtml(s.name)}</span>
+                            <span class="led-state-desc">${escapeHtml(s.state)}</span>
+                        </div>
+                    `).join('');
+                }
+            } else {
+                flasherLedGuideSection.style.display = 'none';
+            }
+        }
+
+    }
+
+    let yamlDebounceTimer = null;
+    function triggerYamlPreviewDebounced() {
+        clearTimeout(yamlDebounceTimer);
+        yamlDebounceTimer = setTimeout(generateYamlPreview, 200);
+    }
+
+    if (flasherHwSelect) {
+        flasherHwSelect.addEventListener('change', () => {
+            updateHardwareDetails();
+            generateYamlPreview();
+        });
+    }
+
+    if (flasherReaderIdInput) flasherReaderIdInput.addEventListener('input', triggerYamlPreviewDebounced);
+    if (flasherWifiSsid) flasherWifiSsid.addEventListener('input', triggerYamlPreviewDebounced);
+    if (flasherWifiPass) flasherWifiPass.addEventListener('input', triggerYamlPreviewDebounced);
+
+    async function generateYamlPreview() {
+        if (!flasherYamlPreview) return;
+        const hwType = flasherHwSelect ? flasherHwSelect.value : 'm5atom_lite_rfid';
+        const readerId = flasherReaderIdInput ? (flasherReaderIdInput.value.trim() || 'reader_atom_1') : 'reader_atom_1';
+        const wifiSsid = flasherWifiSsid ? flasherWifiSsid.value.trim() : '';
+        const wifiPass = flasherWifiPass ? flasherWifiPass.value.trim() : '';
+
+        const params = new URLSearchParams({
+            hardware_type: hwType,
+            reader_id: readerId,
+        });
+        if (wifiSsid) params.append('wifi_ssid', wifiSsid);
+        if (wifiPass) params.append('wifi_password', wifiPass);
+
+        try {
+            const res = await fetch(`/api/firmware/generate-yaml?${params.toString()}`);
+            if (res.ok) {
+                const data = await res.json();
+                flasherYamlPreview.textContent = data.yaml;
+                if (yamlFilenameBadge) yamlFilenameBadge.textContent = data.filename;
+            } else {
+                flasherYamlPreview.textContent = '# Konnte YAML nicht generieren';
+            }
+        } catch (e) {
+            flasherYamlPreview.textContent = '# Fehler beim Laden der YAML';
+        }
+    }
+
+    if (btnDownloadYaml) {
+        btnDownloadYaml.addEventListener('click', () => {
+            const hwType = flasherHwSelect ? flasherHwSelect.value : 'm5atom_lite_rfid';
+            const readerId = flasherReaderIdInput ? (flasherReaderIdInput.value.trim() || 'reader_atom_1') : 'reader_atom_1';
+            const wifiSsid = flasherWifiSsid ? flasherWifiSsid.value.trim() : '';
+            const wifiPass = flasherWifiPass ? flasherWifiPass.value.trim() : '';
+
+            const params = new URLSearchParams({
+                hardware_type: hwType,
+                reader_id: readerId,
+                download: 'true'
+            });
+            if (wifiSsid) params.append('wifi_ssid', wifiSsid);
+            if (wifiPass) params.append('wifi_password', wifiPass);
+
+            window.location.href = `/api/firmware/generate-yaml?${params.toString()}`;
+        });
+    }
+
+    if (btnCopyYaml) {
+        btnCopyYaml.addEventListener('click', async () => {
+            if (!flasherYamlPreview) return;
+            const text = flasherYamlPreview.textContent;
+            try {
+                await navigator.clipboard.writeText(text);
+                const originalText = btnCopyYaml.textContent;
+                btnCopyYaml.textContent = '✓ Kopiert!';
+                btnCopyYaml.classList.add('btn-success');
+                setTimeout(() => {
+                    btnCopyYaml.textContent = originalText;
+                    btnCopyYaml.classList.remove('btn-success');
+                }, 2000);
+            } catch (err) {
+                console.error('Kopieren fehlgeschlagen:', err);
+            }
+        });
     }
 
     // =========================================================================

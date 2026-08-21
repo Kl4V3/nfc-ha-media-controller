@@ -162,13 +162,23 @@ In the Web Dashboard under **Readers & Zones**:
 ## 🔌 Hardware & ESPHome Setup
 
 ### Recommended Hardware
-- **Microcontroller:** ESP32 NodeMCU or ESP8266 (D1 Mini)
-- **NFC/RFID Reader:** PN532 (I2C) or RC522 (SPI)
-- **Tags:** NTAG213 / NTAG215 / NTAG216 cards, stickers, or tags
+- ⭐ **Top Recommendation (Plug & Play):** **M5Stack ATOM Lite** + **M5Stack RFID 2 Unit (WS1850S / RC522 via Grove I2C)**
+  - Keine Lötarbeiten nötig – einfach mit dem beiliegenden Grove-Kabel verbinden!
+  - Integrierte RGB NeoPixel-Status-LED (Grün = Verbunden, Blau = Verbindet, Cyan = Play, Orange = Stop, Rot = Fehler).
+  - Integrierter Push-Button für Status-Ping und Neustart.
+- **Alternative Microcontroller:** ESP32 NodeMCU, ESP32-C3 oder ESP8266 (D1 Mini).
+- **Alternative NFC/RFID Module:** PN532 (I2C) oder RC522 (SPI).
+- **Tags:** NTAG213 / NTAG215 / NTAG216 Karten, Sticker oder Schlüsselanhänger.
 
 ### ESPHome Configuration Templates
-- **PN532 (I2C):** Complete configuration with presence polling loop in [`esphome/esphome_pn532_i2c.yaml`](esphome/esphome_pn532_i2c.yaml).
+- **M5Stack Atom Lite + RFID (I2C):** Vollständige Konfiguration mit RGB-LED-Feedback & Toniebox-Präsenzerkennung in [`esphome/esphome_m5atom_lite_rfid.yaml`](esphome/esphome_m5atom_lite_rfid.yaml).
+- **PN532 (I2C):** Konfiguration in [`esphome/esphome_pn532_i2c.yaml`](esphome/esphome_pn532_i2c.yaml).
 - **RC522 (SPI):** Template in [`esphome/esphome_rc522_spi.yaml`](esphome/esphome_rc522_spi.yaml).
+
+### ⚡ 1-Klick Browser-Flasher im Web-Dashboard
+Über den neuen Tab **„Firmware & Flasher“** im Web-Dashboard (`http://<ip>:5000`):
+- Direktes Flashen des ESP32 per USB-C über **ESP Web Tools / Web Serial API** im Browser.
+- Automatischer **YAML-Generator**: Lädt die maßgeschneiderte ESPHome-Konfigurationsdatei mit den aktuell im Docker konfigurierten MQTT-Zugangsdaten (Broker-IP, Port, User, Passwort) herunter.
 
 ---
 
@@ -195,6 +205,9 @@ To secure the dashboard from unauthorized access on your local network, place it
 | `/api/tags/{tag_id}` | `GET`, `PUT`, `DELETE` | Read, update, or delete a specific tag |
 | `/api/readers` | `GET`, `POST` | List all readers or create/update |
 | `/api/readers/{reader_id}` | `GET`, `PUT`, `DELETE` | Manage a specific reader mapping |
+| `/api/firmware/templates` | `GET` | List available hardware profiles and pinout guides |
+| `/api/firmware/generate-yaml` | `GET` | Generate or download customized ESPHome YAML with Docker MQTT credentials |
+| `/api/firmware/manifest/{type}` | `GET` | Web Serial ESP Web Tools manifest |
 | `/api/abs/series` | `GET` | List series from Audiobookshelf |
 | `/api/test/scan` | `POST` | Simulate a tag scan (scanned/removed) |
 | `/api/history` | `GET` | Retrieve the last 50 scan events |

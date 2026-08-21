@@ -888,3 +888,91 @@ body {
     border-radius: var(--radius-sm);
     background: #192236;
 }
+
+/* ==========================================================================
+   Firmware & Flasher Tab Styles
+   ========================================================================== */
+.led-guide-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.led-guide-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 10px;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color);
+    font-size: 12px;
+}
+
+.led-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 0 6px currentColor;
+}
+
+.led-name {
+    font-weight: 600;
+    min-width: 80px;
+    color: var(--text-primary);
+}
+
+.led-state-desc {
+    color: var(--text-secondary);
+    font-size: 11px;
+}
+
+.pinout-table-compact {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+
+.pinout-table-compact th {
+    background: #1e293b;
+    padding: 6px 10px;
+    text-align: left;
+    color: var(--text-secondary);
+    font-weight: 600;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.pinout-table-compact td {
+    padding: 6px 10px;
+    border-bottom: 1px solid rgba(51, 65, 85, 0.4);
+    color: var(--text-primary);
+}
+
+.pinout-table-compact tr:last-child td {
+    border-bottom: none;
+}
+
+.badge-feature {
+    display: inline-block;
+    padding: 2px 6px;
+    font-size: 11px;
+    background: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
+    border-radius: 4px;
+    margin: 2px 4px 2px 0;
+}
+
+.header-tab-switch {
+    display: flex;
+    gap: 6px;
+    background: var(--bg-tertiary);
+    padding: 4px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+}
+

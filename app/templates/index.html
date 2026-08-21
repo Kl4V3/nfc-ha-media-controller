@@ -84,6 +84,10 @@
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
                 Test-Simulator & ABS
             </button>
+            <button class="tab-btn" data-tab="flasher-tab">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                Firmware & Flasher
+            </button>
         </nav>
 
         <!-- ===================================================================
@@ -278,6 +282,169 @@
                 </div>
 
             </div>
+        </section>
+
+        <!-- ===================================================================
+             TAB 5: ESPHOME FIRMWARE & YAML GENERATOR
+             =================================================================== -->
+        <section id="flasher-tab" class="tab-pane">
+
+            <!-- 1. Hardware-Profil & Anschlussbelegung -->
+            <div class="card mb-4" style="margin-bottom: 20px;">
+                <div class="card-header">
+                    <h3>🛠️ 1. Hardware-Profil & Anschlussbelegung</h3>
+                    <span class="badge badge-primary">Schritt 1</span>
+                </div>
+                <div class="card-body">
+                    <p class="card-desc">Wähle dein Hardware-Setup. Die Pinbelegung, LED-Farbcodes und die passende ESPHome-Konfiguration passen sich automatisch an.</p>
+
+                    <div class="form-group" style="max-width: 550px;">
+                        <label for="flasher-hw-select">Hardware-Profil</label>
+                        <select id="flasher-hw-select" class="form-select" style="font-size: 14px; font-weight: 500;">
+                            <option value="m5atom_lite_rfid">⭐ M5Stack ATOM Lite + RFID 2 Unit (Grove I2C)</option>
+                            <option value="esp32_pn532_i2c">ESP32 NodeMCU + PN532 NFC (I2C)</option>
+                            <option value="esp32_rc522_spi">ESP32 NodeMCU + RC522 RFID (SPI)</option>
+                        </select>
+                    </div>
+
+                    <!-- Hardware Info, Pinout & LED Details -->
+                    <div id="flasher-hw-info-card" style="margin-top: 16px; padding: 16px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-md);">
+                        <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; margin-bottom: 8px;">
+                            <h4 id="flasher-hw-name" style="margin: 0; font-size: 15px; color: var(--text-primary);">M5Stack ATOM Lite + RFID 2 Unit</h4>
+                            <span id="flasher-hw-recommended-badge" class="badge badge-success">⭐ Empfohlen (Plug & Play)</span>
+                        </div>
+                        <p id="flasher-hw-desc" class="text-xs text-muted" style="margin-bottom: 14px;"></p>
+
+                        <div class="grid-2-col" style="gap: 16px;">
+                            <div>
+                                <h5 style="font-size: 12px; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary);">Anschlussbelegung:</h5>
+                                <div id="flasher-pinout-table"></div>
+                            </div>
+                            <div id="flasher-led-guide-section">
+                                <h5 style="font-size: 12px; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary);">Status-LED Farbcodes:</h5>
+                                <div id="flasher-led-guide-list" class="led-guide-grid"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. ESPHome Konfiguration & Download -->
+            <div class="card mb-4" style="margin-bottom: 20px;">
+                <div class="card-header">
+                    <h3>📄 2. Individuelle ESPHome Konfiguration (.yaml)</h3>
+                    <span class="badge badge-success">Auto-MQTT</span>
+                </div>
+                <div class="card-body">
+                    <p class="card-desc">Die Zugangsdaten deines Docker-Servers werden automatisch in die Konfiguration eingesetzt. Lade die <code>.yaml</code> Datei herunter oder kopiere sie für Home Assistant.</p>
+
+                    <div class="grid-2-col" style="gap: 20px;">
+                        <div>
+                            <h4 style="font-size: 14px; margin-bottom: 12px;">Parameter konfigurieren:</h4>
+
+                            <div class="form-row-2">
+                                <div class="form-group">
+                                    <label for="flasher-reader-select">Reader-Zuordnung</label>
+                                    <select id="flasher-reader-select" class="form-select font-mono">
+                                        <option value="__custom__">➕ Neuer Reader...</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="flasher-reader-id-input">Reader ID (MQTT Topic)</label>
+                                    <input type="text" id="flasher-reader-id-input" class="form-input font-mono" value="reader_atom_1" placeholder="reader_kizi">
+                                </div>
+                            </div>
+
+                            <div class="form-row-2">
+                                <div class="form-group">
+                                    <label for="flasher-wifi-ssid">WLAN SSID (Optional)</label>
+                                    <input type="text" id="flasher-wifi-ssid" class="form-input" placeholder="MeinWLAN">
+                                </div>
+                                <div class="form-group">
+                                    <label for="flasher-wifi-pass">WLAN Passwort (Optional)</label>
+                                    <input type="password" id="flasher-wifi-pass" class="form-input" placeholder="WLAN-Passwort">
+                                </div>
+                            </div>
+
+                            <div class="form-row-2">
+                                <div class="form-group">
+                                    <label for="flasher-mqtt-broker">MQTT Broker (aus Docker)</label>
+                                    <input type="text" id="flasher-mqtt-broker" class="form-input font-mono" readonly>
+                                </div>
+                                <div class="form-group">
+                                    <label for="flasher-mqtt-port">MQTT Port</label>
+                                    <input type="text" id="flasher-mqtt-port" class="form-input font-mono" readonly>
+                                </div>
+                            </div>
+
+                            <div class="flasher-actions" style="margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap;">
+                                <button type="button" id="btn-download-yaml" class="btn btn-primary">
+                                    💾 ESPHome YAML herunterladen
+                                </button>
+                                <button type="button" id="btn-copy-yaml" class="btn btn-secondary">
+                                    📋 In Zwischenablage kopieren
+                                </button>
+                            </div>
+                        </div>
+
+                        <div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                <h4 style="font-size: 14px; margin: 0;">Generierte YAML-Vorschau:</h4>
+                                <span id="yaml-filename-badge" class="badge badge-secondary font-mono" style="font-size: 10px;">esphome_reader_atom_1.yaml</span>
+                            </div>
+                            <pre id="flasher-yaml-preview" class="code-block" style="max-height: 280px; font-size: 11px; overflow-y: auto; white-space: pre-wrap;"></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. Flashen & Installieren Anleitung -->
+            <div class="card">
+                <div class="card-header">
+                    <h3>🚀 3. Anleitung: Firmware auf den ESP32 flashen</h3>
+                    <span class="badge badge-primary">Schritt 3</span>
+                </div>
+                <div class="card-body">
+                    <div class="grid-3-col" style="gap: 16px;">
+                        
+                        <!-- Option A -->
+                        <div style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px;">
+                            <h4 style="font-size: 14px; margin-bottom: 8px; color: var(--accent-primary);">🏠 Methode 1: Home Assistant ESPHome</h4>
+                            <p class="text-xs text-muted" style="margin-bottom: 12px;">Der einfachste Weg, wenn du Home Assistant nutzt:</p>
+                            <ol class="text-xs text-muted" style="padding-left: 16px; line-height: 1.6;">
+                                <li>Öffne das <strong>ESPHome Dashboard</strong> in Home Assistant.</li>
+                                <li>Klicke auf <strong>+ New Device</strong> und wähle <em>Open ESPHome Web</em>.</li>
+                                <li>Füge den generierten YAML-Code ein.</li>
+                                <li>Klicke auf <strong>Install</strong> (per USB oder Wireless).</li>
+                            </ol>
+                        </div>
+
+                        <!-- Option B -->
+                        <div style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px;">
+                            <h4 style="font-size: 14px; margin-bottom: 8px; color: var(--accent-success);">🌐 Methode 2: web.esphome.io (Browser)</h4>
+                            <p class="text-xs text-muted" style="margin-bottom: 12px;">Direkt im Browser ohne Installation:</p>
+                            <ol class="text-xs text-muted" style="padding-left: 16px; line-height: 1.6;">
+                                <li>Öffne <a href="https://web.esphome.io" target="_blank" rel="noopener noreferrer" class="text-primary" style="text-decoration: underline;">web.esphome.io</a> im Chrome/Edge Browser.</li>
+                                <li>Schließe den ESP per USB an und klicke auf <strong>Connect</strong>.</li>
+                                <li>Flashe die Basis-Firmware und verbinde das WLAN.</li>
+                                <li>Danach lädst du die erstellte YAML über OTA hoch.</li>
+                            </ol>
+                        </div>
+
+                        <!-- Option C -->
+                        <div style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px;">
+                            <h4 style="font-size: 14px; margin-bottom: 8px; color: var(--accent-warning);">💻 Methode 3: ESPHome CLI (Terminal)</h4>
+                            <p class="text-xs text-muted" style="margin-bottom: 12px;">Für Entwickler und Terminal-Nutzer:</p>
+                            <div class="code-block font-mono" style="font-size: 11px; padding: 8px; margin-bottom: 8px;">
+                                esphome run &lt;datei&gt;.yaml
+                            </div>
+                            <p class="text-xs text-muted">Kompiliert und flasht die Konfigurationsdatei vollautomatisch über USB oder OTA.</p>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
         </section>
 
     </main>

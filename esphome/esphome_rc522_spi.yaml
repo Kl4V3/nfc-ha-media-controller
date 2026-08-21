@@ -9,6 +9,10 @@ substitutions:
   reader_id: "reader_living_room"
   mqtt_broker: "192.168.1.50"
   mqtt_port: "1883"
+  mqtt_user: "nfc_user"
+  mqtt_password: "secret_password"
+  wifi_ssid: "YourWiFiSSID"
+  wifi_password: "YourWiFiPassword"
 
 esphome:
   name: ${device_name}
@@ -19,18 +23,31 @@ esp32:
   framework:
     type: arduino
 
+# Improv Wi-Fi via Serial (ermöglicht direkte WLAN-Einrichtung im Browser über ESP Web Tools)
+improv_serial:
+
+web_server:
+  port: 80
+
+captive_portal:
+
 wifi:
-  ssid: "YourWiFiSSID"
-  password: "YourWiFiPassword"
+  ssid: ${wifi_ssid}
+  password: ${wifi_password}
+  fast_connect: true
+  ap:
+    ssid: "RFID-RC522-Fallback"
+    password: "setup_password"
 
 logger:
   level: INFO
 
 mqtt:
+  id: mqtt_client
   broker: ${mqtt_broker}
   port: ${mqtt_port}
-  username: "nfc_user"
-  password: "secret_password"
+  username: ${mqtt_user}
+  password: ${mqtt_password}
 
 # SPI Bus
 spi:

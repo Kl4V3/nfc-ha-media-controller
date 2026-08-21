@@ -9,6 +9,10 @@ substitutions:
   reader_id: "reader_kizi"  # Must match the reader_id in the middleware
   mqtt_broker: "192.168.1.50"
   mqtt_port: "1883"
+  mqtt_user: "nfc_user"
+  mqtt_password: "secret_password"
+  wifi_ssid: "YourWiFiSSID"
+  wifi_password: "YourWiFiPassword"
 
 esphome:
   name: ${device_name}
@@ -19,21 +23,33 @@ esp32:
   framework:
     type: arduino
 
+# Improv Wi-Fi via Serial (ermöglicht direkte WLAN-Einrichtung im Browser über ESP Web Tools)
+improv_serial:
+
+web_server:
+  port: 80
+
+captive_portal:
+
 # WiFi Configuration
 wifi:
-  ssid: "YourWiFiSSID"
-  password: "YourWiFiPassword"
+  ssid: ${wifi_ssid}
+  password: ${wifi_password}
   fast_connect: true
+  ap:
+    ssid: "NFC-PN532-Fallback"
+    password: "setup_password"
 
 logger:
   level: INFO
 
 # MQTT Client Configuration
 mqtt:
+  id: mqtt_client
   broker: ${mqtt_broker}
   port: ${mqtt_port}
-  username: "nfc_user"
-  password: "secret_password"
+  username: ${mqtt_user}
+  password: ${mqtt_password}
   discovery: false
 
 # I2C Bus for PN532

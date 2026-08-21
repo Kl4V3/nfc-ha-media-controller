@@ -1,0 +1,242 @@
+# ==============================================================================
+# ESPHome Configuration: M5Stack Atom Lite + M5Stack RFID Unit (I2C)
+# ==============================================================================
+# Hardware:
+#   - M5Stack ATOM Lite (ESP32-PICO-D4)
+#   - M5Stack RFID 2 Unit (WS1850S / RC522 via Grove I2C)
+#
+# Features:
+#   - Plug & Play via Grove Port (GPIO 26 = SDA, GPIO 32 = SCL)
+#   - Status NeoPixel RGB LED on GPIO 27 (Visual feedback for Connect, Scan, Remove, Error)
+#   - Hardware Button on GPIO 39 (Short press: Status Ping / Long press: Restart)
+#   - Toniebox Presence Logic (Tag Placed = Play, Tag Removed = Stop)
+#   - Improv Wi-Fi over Serial (Browser-based Wi-Fi setup via ESP Web Tools)
+# ==============================================================================
+
+substitutions:
+  device_name: "m5atom-nfc-reader"
+  friendly_name: "M5Atom NFC Reader"
+  reader_id: "reader_atom_1"
+  mqtt_broker: "192.168.1.50"
+  mqtt_port: "1883"
+  mqtt_user: "nfc_user"
+  mqtt_password: "secret_password"
+  wifi_ssid: "YourWiFiSSID"
+  wifi_password: "YourWiFiPassword"
+
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+  project:
+    name: "theklave.nfc-ha-media-controller"
+    version: "0.3.0"
+  on_boot:
+    priority: 600
+    then:
+      - light.turn_on:
+          id: atom_led
+          brightness: 50%
+          red: 0.0
+          green: 0.3
+          blue: 1.0
+
+esp32:
+  board: m5stack-atom
+  framework:
+    type: arduino
+
+# Improv Wi-Fi via Serial (ermöglicht direkte WLAN-Einrichtung im Browser über ESP Web Tools)
+improv_serial:
+
+# Integrierter Webserver auf Port 80 & Captive Portal
+web_server:
+  port: 80
+
+captive_portal:
+
+# Wi-Fi Konfiguration
+wifi:
+  ssid: ${wifi_ssid}
+  password: ${wifi_password}
+  fast_connect: true
+  ap:
+    ssid: "M5Atom-NFC-Fallback"
+    password: "setup_password"
+  on_connect:
+    then:
+      - light.turn_on:
+          id: atom_led
+          brightness: 50%
+          red: 0.0
+          green: 0.8
+          blue: 0.8
+  on_disconnect:
+    then:
+      - light.turn_on:
+          id: atom_led
+          brightness: 50%
+          red: 1.0
+          green: 0.0
+          blue: 0.0
+
+# Logger Konfiguration
+logger:
+  level: INFO
+  baud_rate: 115200
+
+# MQTT Client Konfiguration
+mqtt:
+  id: mqtt_client
+  broker: ${mqtt_broker}
+  port: ${mqtt_port}
+  username: ${mqtt_user}
+  password: ${mqtt_password}
+  discovery: false
+  on_connect:
+    then:
+      - light.turn_on:
+          id: atom_led
+          brightness: 60%
+          red: 0.0
+          green: 1.0
+          blue: 0.0
+      - delay: 1000ms
+      - light.turn_on:
+          id: atom_led
+          brightness: 15%
+          red: 0.0
+          green: 0.4
+          blue: 0.0
+  on_disconnect:
+    then:
+      - light.turn_on:
+          id: atom_led
+          brightness: 50%
+          red: 1.0
+          green: 0.5
+          blue: 0.0
+
+# I2C Bus für den M5Stack Grove Port (Pin 26 = SDA, Pin 32 = SCL)
+i2c:
+  id: bus_grove
+  sda: GPIO26
+  scl: GPIO32
+  scan: true
+  frequency: 100kHz
+
+# Status LED: Eingebaute NeoPixel RGB-LED auf GPIO 27
+light:
+  - platform: esp32_rmt_led_strip
+    chipset: ws2812
+    channel_colors: GRB
+    pin: GPIO27
+    num_leds: 1
+    id: atom_led
+    name: "Atom Status LED"
+    default_transition_length: 150ms
+
+# Hardware Button auf der Vorderseite des Atom Lite (GPIO 39)
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: GPIO39
+      inverted: true
+    name: "Atom Button"
+    on_click:
+      - min_length: 50ms
+        max_length: 1000ms
+        then:
+          - logger.log: "Button gedrückt - Status Ping an MQTT"
+          - mqtt.publish:
+              topic: "rfid/status"
+              payload: "{\"reader_id\": \"${reader_id}\", \"status\": \"alive\"}"
+          - light.turn_on:
+              id: atom_led
+              brightness: 100%
+              red: 1.0
+              green: 1.0
+              blue: 0.0
+          - delay: 300ms
+          - light.turn_on:
+              id: atom_led
+              brightness: 10%
+              red: 0.0
+              green: 0.2
+              blue: 0.0
+      - min_length: 3000ms
+        max_length: 10000ms
+        then:
+          - logger.log: "Long Press erkannt - Starte Neustart..."
+          - button.press: restart_btn
+
+button:
+  - platform: restart
+    id: restart_btn
+    name: "Restart Reader"
+
+# Globale Variablen für Toniebox-Präsenzerkennung
+globals:
+  - id: current_tag_id
+    type: std::string
+    initial_value: '""'
+  - id: tag_is_present
+    type: bool
+    initial_value: 'false'
+  - id: consecutive_misses
+    type: int
+    initial_value: '0'
+
+# M5Stack RFID / RFID 2 Unit (WS1850S / RC522 via I2C, Standard-Adresse 0x28)
+rc522_i2c:
+  i2c_id: bus_grove
+  address: 0x28
+  update_interval: 200ms
+  on_tag:
+    then:
+      - lambda: |-
+          id(consecutive_misses) = 0;
+          // Neuer Tag erkannt oder Tag gewechselt
+          if (!id(tag_is_present) || id(current_tag_id) != x) {
+            id(current_tag_id) = x;
+            id(tag_is_present) = true;
+            
+            // MQTT JSON Payload erstellen
+            std::string payload = "{\"tag_id\": \"" + x + "\", \"reader_id\": \"${reader_id}\", \"status\": \"scanned\"}";
+            ESP_LOGI("NFC", "Tag erkannt: %s -> Sende rfid/scanned", x.c_str());
+            id(mqtt_client).publish("rfid/scanned", payload);
+          }
+      # Visuelles Feedback: LED blinkt kurz Cyan/Grün auf
+      - light.turn_on:
+          id: atom_led
+          brightness: 100%
+          red: 0.0
+          green: 1.0
+          blue: 0.8
+      - delay: 250ms
+      - light.turn_on:
+          id: atom_led
+          brightness: 10%
+          red: 0.0
+          green: 0.2
+          blue: 0.0
+
+# Toniebox-Entfernungs-Prüfung (Tag wurde weggenommen -> Musik Stoppen)
+interval:
+  - interval: 300ms
+    then:
+      - lambda: |-
+          if (id(tag_is_present)) {
+            id(consecutive_misses)++;
+            // Nach 2 Zyklen (~600ms) ohne Tag -> Entfernt
+            if (id(consecutive_misses) >= 2) {
+              std::string old_tag = id(current_tag_id);
+              id(tag_is_present) = false;
+              id(current_tag_id) = "";
+              id(consecutive_misses) = 0;
+
+              // Sende 'removed' Event an Middleware
+              std::string payload = "{\"tag_id\": \"" + old_tag + "\", \"reader_id\": \"${reader_id}\", \"status\": \"removed\"}";
+              ESP_LOGI("NFC", "Tag entfernt: %s -> Sende Toniebox-Stop", old_tag.c_str());
+              id(mqtt_client).publish("rfid/scanned", payload);
+            }
+          }

@@ -15,3 +15,5 @@ htmlcov/
 .git/
 .gitignore
 .env
+.esphome/
+esphome/.esphome/

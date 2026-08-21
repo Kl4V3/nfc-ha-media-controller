@@ -16,6 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Anwendungsquellcode kopieren
 COPY app/ /app/app/
 COPY config/ /app/config/
+COPY esphome/ /app/esphome/
 
 # Datenverzeichnis für SQLite und Config vorbereiten
 RUN mkdir -p /app/data
