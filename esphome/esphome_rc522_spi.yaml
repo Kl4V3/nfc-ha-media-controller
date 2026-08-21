@@ -55,48 +55,21 @@ spi:
   mosi_pin: GPIO23
   miso_pin: GPIO19
 
-globals:
-  - id: current_tag_id
-    type: std::string
-    initial_value: '""'
-  - id: tag_is_present
-    type: bool
-    initial_value: 'false'
-  - id: consecutive_misses
-    type: int
-    initial_value: '0'
-
+# RC522 SPI RFID Reader
 rc522_spi:
   cs_pin: GPIO5
   reset_pin: GPIO22
-  update_interval: 200ms
+  update_interval: 300ms
   on_tag:
     then:
       - lambda: |-
-          id(consecutive_misses) = 0;
-          if (!id(tag_is_present) || id(current_tag_id) != x) {
-            id(current_tag_id) = x;
-            id(tag_is_present) = true;
-            
-            std::string payload = "{\"tag_id\": \"" + x + "\", \"reader_id\": \"${reader_id}\", \"status\": \"scanned\"}";
-            ESP_LOGI("RFID", "Tag scanned: %s", x.c_str());
-            id(mqtt_client).publish("rfid/scanned", payload);
-          }
+          std::string payload = "{\"tag_id\": \"" + x + "\", \"reader_id\": \"${reader_id}\", \"status\": \"scanned\"}";
+          ESP_LOGI("RFID", "Tag scanned: %s -> Sende rfid/scanned (Play)", x.c_str());
+          id(mqtt_client).publish("rfid/scanned", payload);
 
-interval:
-  - interval: 300ms
+  on_tag_removed:
     then:
       - lambda: |-
-          if (id(tag_is_present)) {
-            id(consecutive_misses)++;
-            if (id(consecutive_misses) >= 2) {
-              std::string old_tag = id(current_tag_id);
-              id(tag_is_present) = false;
-              id(current_tag_id) = "";
-              id(consecutive_misses) = 0;
-
-              std::string payload = "{\"tag_id\": \"" + old_tag + "\", \"reader_id\": \"${reader_id}\", \"status\": \"removed\"}";
-              ESP_LOGI("RFID", "Tag removed: %s", old_tag.c_str());
-              id(mqtt_client).publish("rfid/scanned", payload);
-            }
-          }
+          std::string payload = "{\"tag_id\": \"" + x + "\", \"reader_id\": \"${reader_id}\", \"status\": \"removed\"}";
+          ESP_LOGI("RFID", "Tag removed: %s -> Sende Toniebox-Stop", x.c_str());
+          id(mqtt_client).publish("rfid/scanned", payload);

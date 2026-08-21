@@ -501,7 +501,7 @@ def get_firmware_manifest(hardware_type: str):
     tmpl_info = FIRMWARE_TEMPLATES[hardware_type]
     return {
         "name": tmpl_info["name"],
-        "version": "0.3.0",
+        "version": "0.3.1",
         "home_assistant_domain": "esphome",
         "new_install_prompt_erase": True,
         "builds": [

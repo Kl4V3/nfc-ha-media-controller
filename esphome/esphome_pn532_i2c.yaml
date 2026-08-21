@@ -59,54 +59,20 @@ i2c:
   scan: true
   frequency: 400kHz
 
-# Global state variables for Toniebox presence polling
-globals:
-  - id: current_tag_id
-    type: std::string
-    initial_value: '""'
-  - id: tag_is_present
-    type: bool
-    initial_value: 'false'
-  - id: consecutive_misses
-    type: int
-    initial_value: '0'
-
 # PN532 NFC Component
 pn532_i2c:
   id: pn532_board
-  update_interval: 200ms
+  update_interval: 300ms
   on_tag:
     then:
       - lambda: |-
-          id(consecutive_misses) = 0;
-          // New tag placed or state change
-          if (!id(tag_is_present) || id(current_tag_id) != x) {
-            id(current_tag_id) = x;
-            id(tag_is_present) = true;
-            
-            // Build JSON payload
-            std::string payload = "{\"tag_id\": \"" + x + "\", \"reader_id\": \"${reader_id}\", \"status\": \"scanned\"}";
-            ESP_LOGI("NFC", "Tag scanned: %s -> Publishing to rfid/scanned", x.c_str());
-            id(mqtt_client).publish("rfid/scanned", payload);
-          }
+          std::string payload = "{\"tag_id\": \"" + x + "\", \"reader_id\": \"${reader_id}\", \"status\": \"scanned\"}";
+          ESP_LOGI("NFC", "Tag scanned: %s -> Sende rfid/scanned (Play)", x.c_str());
+          id(mqtt_client).publish("rfid/scanned", payload);
 
-# Periodic loop checking if tag has been removed (Toniebox removal logic)
-interval:
-  - interval: 300ms
+  on_tag_removed:
     then:
       - lambda: |-
-          if (id(tag_is_present)) {
-            id(consecutive_misses)++;
-            // If not seen for 2 consecutive cycles (~600ms) -> tag removed
-            if (id(consecutive_misses) >= 2) {
-              std::string old_tag = id(current_tag_id);
-              id(tag_is_present) = false;
-              id(current_tag_id) = "";
-              id(consecutive_misses) = 0;
-
-              // Publish Tag Removed Event
-              std::string payload = "{\"tag_id\": \"" + old_tag + "\", \"reader_id\": \"${reader_id}\", \"status\": \"removed\"}";
-              ESP_LOGI("NFC", "Tag removed: %s -> Publishing Stop Event", old_tag.c_str());
-              id(mqtt_client).publish("rfid/scanned", payload);
-            }
-          }
+          std::string payload = "{\"tag_id\": \"" + x + "\", \"reader_id\": \"${reader_id}\", \"status\": \"removed\"}";
+          ESP_LOGI("NFC", "Tag removed: %s -> Sende Toniebox-Stop", x.c_str());
+          id(mqtt_client).publish("rfid/scanned", payload);
