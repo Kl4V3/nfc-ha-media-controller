@@ -542,36 +542,44 @@ class AudiobookshelfClient:
 
     def reset_item_progress(self, item_id: str, user_token: Optional[str] = None) -> bool:
         """
-        Setzt den Fortschritt eines einzelnen Buchs in Audiobookshelf zurück (isFinished=False, progress=0).
-        Versucht DELETE /api/me/progress/:id und PATCH /api/me/progress/:id.
+        Setzt den Fortschritt eines einzelnen Buchs in Audiobookshelf auf Anfang (0:00) zurück.
+        1. Sucht den aktiven Fortschrittseintrag via GET /api/me/progress und löscht ihn via DELETE /api/me/progress/{prog_id}
+        2. Führt zusätzlich einen PATCH /api/me/progress/{item_id} mit currentTime=0, progress=0, isFinished=False aus
         """
         headers = self._get_headers(user_token)
-        url = f"{self.base_url}/api/me/progress/{item_id}"
-        
-        # 1. DELETE Versuch (Löscht gespeicherten Fortschritt)
-        try:
-            resp = requests.delete(url, headers=headers, timeout=self.timeout)
-            if resp.status_code in [200, 204]:
-                logger.debug(f"Fortschritt für Buch '{item_id}' via DELETE gelöscht.")
-                return True
-        except Exception as e:
-            logger.debug(f"DELETE progress {url} fehlgeschlagen: {e}")
+        success = False
 
-        # 2. PATCH Versuch (Setzt isFinished=False & progress=0)
+        # 1. Bestehenden Progress suchen und per Progress-ID löschen
         try:
+            resp = requests.get(f"{self.base_url}/api/me/progress", headers=headers, timeout=self.timeout)
+            if resp.status_code == 200:
+                for p in resp.json().get("mediaProgress", []):
+                    if p.get("libraryItemId") == item_id or p.get("id") == item_id:
+                        prog_id = p.get("id")
+                        del_resp = requests.delete(f"{self.base_url}/api/me/progress/{prog_id}", headers=headers, timeout=self.timeout)
+                        if del_resp.status_code in [200, 204]:
+                            logger.info(f"Fortschritt für Buch '{item_id}' (Eintrag '{prog_id}') in ABS via DELETE gelöscht.")
+                            success = True
+        except Exception as e:
+            logger.debug(f"DELETE progress via ID für '{item_id}' fehlgeschlagen: {e}")
+
+        # 2. PATCH Versuch (Setzt explizit currentTime=0, progress=0 & isFinished=False)
+        try:
+            url = f"{self.base_url}/api/me/progress/{item_id}"
             payload = {
                 "currentTime": 0,
                 "progress": 0,
-                "isFinished": False
+                "isFinished": False,
+                "hideFromContinueListening": False
             }
             resp = requests.patch(url, headers=headers, json=payload, timeout=self.timeout)
             if resp.status_code in [200, 204]:
-                logger.debug(f"Fortschritt für Buch '{item_id}' via PATCH zurückgesetzt.")
-                return True
+                logger.info(f"Fortschritt für Buch '{item_id}' in ABS via PATCH auf 0:00 zurückgesetzt.")
+                success = True
         except Exception as e:
             logger.debug(f"PATCH progress {url} fehlgeschlagen: {e}")
 
-        return False
+        return success
 
     def reset_series_progress(self, books: List[Dict[str, Any]], user_token: Optional[str] = None):
         """

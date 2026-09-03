@@ -1242,7 +1242,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function getSelectedHardwareProfile() {
-        const hwId = flasherHwSelect ? flasherHwSelect.value : "m5atom_lite_rfid";
+        const hwId = flasherHwSelect ? flasherHwSelect.value : "esp32_pn5180";
         return firmwareTemplates.find(t => t.id === hwId) || firmwareTemplates[0] || null;
     }
 
@@ -1310,8 +1310,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     async function generateYamlPreview() {
         if (!flasherYamlPreview) return;
-        const hwType = flasherHwSelect ? flasherHwSelect.value : "m5atom_lite_rfid";
-        const readerId = flasherReaderIdInput ? (flasherReaderIdInput.value.trim() || "reader_atom_1") : "reader_atom_1";
+        const hwType = flasherHwSelect ? flasherHwSelect.value : "esp32_pn5180";
+        const readerId = flasherReaderIdInput ? (flasherReaderIdInput.value.trim() || "reader_box1") : "reader_box1";
         const wifiSsid = flasherWifiSsid ? flasherWifiSsid.value.trim() : "";
         const wifiPass = flasherWifiPass ? flasherWifiPass.value.trim() : "";
 

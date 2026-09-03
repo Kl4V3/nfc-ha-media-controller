@@ -329,11 +329,38 @@ def debug_abs_series(req_data: AbsDebugRequest, request: Request):
 # ==============================================================================
 
 FIRMWARE_TEMPLATES = {
+    "esp32_pn5180": {
+        "id": "esp32_pn5180",
+        "name": "⭐ ESP32 + PN5180 NFC (Toniebox Figures & ISO-15693 / ISO-14443)",
+        "recommended": True,
+        "filename": "config.h",
+        "framework": "platformio",
+        "description": "Recommended for Tonie figures (NXP ICODE SLIX2 Privacy Mode) and standard NFC cards via SPI.",
+        "features": [
+            "Native Toniebox Figure Support (Automatic Privacy-Password Handshake)",
+            "Dual-Protocol: Reads ISO-15693 (SLIX/SLIX2) and ISO-14443 (NTAG, Mifare)",
+            "Continuous Polling & Zero-Latency Presence Detection (Play on place, Stop on remove)",
+            "Integrated Web Diagnostic Server (Port 80) with Wi-Fi signal & live logs",
+            "PlatformIO C++ Firmware (located in firmware/esp32_pn5180)"
+        ],
+        "pinout": [
+            {"pin": "MOSI", "signal": "SPI MOSI", "gpio": "GPIO 23"},
+            {"pin": "MISO", "signal": "SPI MISO", "gpio": "GPIO 19"},
+            {"pin": "SCK", "signal": "SPI Clock", "gpio": "GPIO 18"},
+            {"pin": "NSS / CS", "signal": "Chip Select", "gpio": "GPIO 5"},
+            {"pin": "BUSY", "signal": "PN5180 Busy Flag", "gpio": "GPIO 21"},
+            {"pin": "RST", "signal": "PN5180 Reset", "gpio": "GPIO 22"},
+            {"pin": "3.3V / 5V", "signal": "Power Supply", "gpio": "3.3V oder 5V"},
+            {"pin": "GND", "signal": "GND", "gpio": "GND"}
+        ],
+        "led_states": []
+    },
     "m5atom_lite_rfid": {
         "id": "m5atom_lite_rfid",
         "name": "M5Stack ATOM Lite + RFID 2 Unit (Grove I2C)",
         "recommended": True,
         "filename": "esphome_m5atom_lite_rfid.yaml",
+        "framework": "esphome",
         "description": "Kompakter ESP32 Controller mit integrierter RGB-Status-LED und Plug & Play Grove-Kabel.",
         "features": [
             "Plug & Play Grove-Kabelanschluss (kein Löten)",
@@ -363,6 +390,7 @@ FIRMWARE_TEMPLATES = {
         "name": "ESP32 NodeMCU + PN532 NFC (I2C)",
         "recommended": False,
         "filename": "esphome_pn532_i2c.yaml",
+        "framework": "esphome",
         "description": "Klassisches ESP32 Entwicklungsboard mit PN532 NFC Modul über I2C Bus.",
         "features": [
             "Hohe NFC-Reichweite",
@@ -382,6 +410,7 @@ FIRMWARE_TEMPLATES = {
         "name": "ESP32 NodeMCU + RC522 RFID (SPI)",
         "recommended": False,
         "filename": "esphome_rc522_spi.yaml",
+        "framework": "esphome",
         "description": "ESP32 Entwicklungsboard mit RC522 RFID Modul über SPI Bus.",
         "features": [
             "Kostengünstiges RFID Setup",
@@ -403,8 +432,11 @@ FIRMWARE_TEMPLATES = {
 
 
 def find_template_file(filename: str) -> Optional[Path]:
-    """Sucht nach einer ESPHome Template-Datei in den typischen Pfaden."""
+    """Sucht nach einer ESPHome oder Firmware Template-Datei in den typischen Pfaden."""
     search_dirs = [
+        Path("/app/firmware/esp32_pn5180/include"),
+        Path("./firmware/esp32_pn5180/include"),
+        Path(__file__).parent.parent.parent / "firmware" / "esp32_pn5180" / "include",
         Path("/app/esphome"),
         Path("./esphome"),
         Path(__file__).parent.parent.parent / "esphome",
@@ -414,6 +446,10 @@ def find_template_file(filename: str) -> Optional[Path]:
         candidate = d / filename
         if candidate.is_file():
             return candidate
+        if filename == "config.h":
+            cand_ex = d / "config.example.h"
+            if cand_ex.is_file():
+                return cand_ex
     return None
 
 
@@ -439,7 +475,7 @@ def list_firmware_templates():
 @api_router.get("/firmware/generate-yaml")
 def generate_firmware_yaml(
     request: Request,
-    hardware_type: str = "m5atom_lite_rfid",
+    hardware_type: str = "esp32_pn5180",
     reader_id: Optional[str] = None,
     device_name: Optional[str] = None,
     friendly_name: Optional[str] = None,
@@ -451,22 +487,14 @@ def generate_firmware_yaml(
     mqtt_password: Optional[str] = None,
     download: bool = False
 ):
-    """Generiert eine maßgeschneiderte ESPHome-YAML mit den Docker MQTT-Zugangsdaten."""
+    """Generiert eine maßgeschneiderte Konfigurationsdatei (ESPHome YAML oder PlatformIO config.h) mit MQTT-Zugangsdaten."""
     config: AppConfig = request.app.state.config
 
     if hardware_type not in FIRMWARE_TEMPLATES:
         raise HTTPException(status_code=400, detail=f"Unbekannter Hardware-Typ: {hardware_type}")
 
-    tmpl_info = FIRMWARE_TEMPLATES[hardware_type]
-    tmpl_path = find_template_file(tmpl_info["filename"])
-    if not tmpl_path:
-        raise HTTPException(status_code=404, detail=f"Template-Datei {tmpl_info['filename']} nicht gefunden.")
-
-    with open(tmpl_path, "r", encoding="utf-8") as f:
-        template_content = f.read()
-
     # Standardwerte aus Config / Parametern ableiten
-    final_reader_id = (reader_id or "reader_atom_1").strip()
+    final_reader_id = (reader_id or ("reader_box1" if hardware_type == "esp32_pn5180" else "reader_atom_1")).strip()
     clean_dev_id = re.sub(r'[^a-zA-Z0-9_-]', '-', final_reader_id.lower()).replace('_', '-')
     
     final_device_name = (device_name or f"nfc-{clean_dev_id}").strip()
@@ -491,6 +519,88 @@ def generate_firmware_yaml(
         "wifi_ssid": final_wifi_ssid,
         "wifi_password": final_wifi_pass,
     }
+
+    # Spezialfall: PlatformIO Firmware für ESP32 + PN5180
+    if hardware_type == "esp32_pn5180":
+        rendered_code = f"""#ifndef CONFIG_H
+#define CONFIG_H
+
+#include <Arduino.h>
+
+// ============================================================================
+// WLAN-KONFIGURATION
+// ============================================================================
+const char* WIFI_SSID       = "{final_wifi_ssid}";
+const char* WIFI_PASSWORD   = "{final_wifi_pass}";
+
+// ============================================================================
+// MQTT-BROKER KONFIGURATION
+// ============================================================================
+const char* MQTT_BROKER     = "{final_mqtt_broker}";
+const int   MQTT_PORT       = {final_mqtt_port};
+const char* MQTT_USER       = "{final_mqtt_user}";
+const char* MQTT_PASSWORD   = "{final_mqtt_pass}";
+
+// MQTT Topic für nfc-ha-media-controller
+const char* MQTT_TOPIC_SCANNED = "rfid/scanned";
+
+// ============================================================================
+// READER-IDENTIFIKATION
+// ============================================================================
+const char* READER_ID          = "{final_reader_id}";
+
+// ============================================================================
+// POLLING- & DEBOUNCE-EINSTELLUNGEN
+// ============================================================================
+const unsigned long SCAN_INTERVAL_MS = 200;
+const int MAX_MISSING_CYCLES = 2; // 2 * 200ms = 400ms Entprellzeit
+
+// ============================================================================
+// TONIEBOX & TEDDYCLOUD PRIVACY-PASSWÖRTER & KOMMANDOS
+// ============================================================================
+struct PrivacyKeyEntry {{
+  const char* label;
+  uint8_t cmdCode;  // 0xB3 (Set Password) oder 0xBA (Privacy Command)
+  int8_t  pwdId;    // 0x04 (SLIX2), 0x03 (SLIX-L), oder -1 (ohne Password-ID)
+  uint8_t key[4];
+}};
+
+const PrivacyKeyEntry KNOWN_PRIVACY_KEYS[] = {{
+  {{ "Toniebox Original (Boxine)",    0xB3,  0x04, {{ 0x5B, 0x6E, 0xFD, 0x7F }} }},
+  {{ "Toniebox Original (BE)",        0xB3,  0x04, {{ 0x7F, 0xFD, 0x6E, 0x5B }} }},
+  {{ "Tonie SLIX-L (0xBA Privacy)",   0xBA, -0x01, {{ 0x5B, 0x6E, 0xFD, 0x7F }} }},
+  {{ "Tonie SLIX-L (0xB3 ID 0x03)",   0xB3,  0x03, {{ 0x5B, 0x6E, 0xFD, 0x7F }} }},
+  {{ "TeddyCloud/NXP (0xBA Privacy)", 0xBA, -0x01, {{ 0x0F, 0x0F, 0x0F, 0x0F }} }},
+  {{ "TeddyCloud/NXP (0xB3 ID 0x04)", 0xB3,  0x04, {{ 0x0F, 0x0F, 0x0F, 0x0F }} }},
+  {{ "TeddyCloud/Zero (0xBA Privacy)",0xBA, -0x01, {{ 0x00, 0x00, 0x00, 0x00 }} }},
+  {{ "TeddyCloud/Zero (0xB3 ID 0x04)",0xB3,  0x04, {{ 0x00, 0x00, 0x00, 0x00 }} }}
+}};
+const size_t NUM_KNOWN_KEYS = sizeof(KNOWN_PRIVACY_KEYS) / sizeof(KNOWN_PRIVACY_KEYS[0]);
+
+#endif // CONFIG_H
+"""
+        filename = "config.h"
+        if download:
+            return PlainTextResponse(
+                rendered_code,
+                media_type="text/x-c",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+            )
+        return {
+            "yaml": rendered_code,
+            "filename": filename,
+            "hardware_type": hardware_type,
+            "reader_id": final_reader_id,
+            "substitutions": subs
+        }
+
+    tmpl_info = FIRMWARE_TEMPLATES[hardware_type]
+    tmpl_path = find_template_file(tmpl_info["filename"])
+    if not tmpl_path:
+        raise HTTPException(status_code=404, detail=f"Template-Datei {tmpl_info['filename']} nicht gefunden.")
+
+    with open(tmpl_path, "r", encoding="utf-8") as f:
+        template_content = f.read()
 
     rendered_yaml = substitute_yaml(template_content, subs)
     filename = f"esphome_{final_reader_id}.yaml"

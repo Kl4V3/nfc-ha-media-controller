@@ -82,28 +82,35 @@
                       data:
                         volume_level: "{{ (volume | float) / 100 }}"
 
-            # 2. Start playback via Music Assistant (if installed) or standard media_player
+            # 2. Set shuffle if supported
+            - action: media_player.shuffle_set
+              target:
+                entity_id: "{{ target_player }}"
+              data:
+                shuffle: "{{ random_flag }}"
+
+            # 3. Start playback via Music Assistant (if installed) or standard media_player
             - choose:
-                # Option A: Music Assistant (mass.play_media)
+                # Option A: Music Assistant (music_assistant.play_media / mass.play_media)
                 - conditions:
                     - condition: template
-                      value_template: "{{ is_state_attr('update.music_assistant', 'installed', true) or target_id.startswith('mass:') or target_id.startswith('audiobookshelf:') }}"
+                      value_template: "{{ is_state_attr('update.music_assistant', 'installed', true) or target_id.startswith('mass:') or target_id.startswith('audiobookshelf:') or target_id.startswith('library:') }}"
                   sequence:
-                    - service: mass.play_media
+                    - action: music_assistant.play_media
                       target:
                         entity_id: "{{ target_player }}"
                       data:
                         media_id: "{{ target_id }}"
                         media_type: "{{ media_type }}"
-                        radio_mode: "{{ random_flag }}"
-              # Fallback Option B: Standard Home Assistant media_player.play_media
-              default:
-                - service: media_player.play_media
-                  target:
-                    entity_id: "{{ target_player }}"
-                  data:
-                    media_content_id: "{{ target_id }}"
-                    media_content_type: "music"
+                        enqueue: replace
+                # Fallback Option B: Standard Home Assistant media_player.play_media
+                default:
+                  - action: media_player.play_media
+                    target:
+                      entity_id: "{{ target_player }}"
+                    data:
+                      media_content_id: "{{ target_id }}"
+                      media_content_type: "music"
 
         # ----------------------------------------------------------------------
         # CONDITION D: Light Control

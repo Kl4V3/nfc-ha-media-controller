@@ -469,19 +469,18 @@ class MQTTService:
                 library_id = (tag.get("library_id") or "").strip() or None
                 logger.info(f"Ermittle aktuellste unfertige Episode für ABS-Podcast '{podcast_id}' (Library: '{library_id or 'Auto'}')...")
                 ep_info = self.abs_client.resolve_latest_podcast_episode(podcast_id, library_id=library_id, user_token=abs_user_token)
+                target_id = self._build_abs_podcast_uri(podcast_id, reader_prefix=abs_provider_prefix)
+                media_type = "podcast"
+                extra_params["start_item"] = "latest"
                 if ep_info and ep_info.get("episode_id"):
-                    episode_id = ep_info["episode_id"]
-                    target_id = self._build_abs_podcast_uri(podcast_id, episode_id=episode_id, reader_prefix=abs_provider_prefix)
-                    media_type = "podcast_episode"
                     metadata["title"] = ep_info.get("episode_title")
                     metadata["podcast_name"] = ep_info.get("podcast_title")
                     metadata["pub_date"] = str(ep_info.get("pub_date") or "")
-                    logger.info(f"ABS Podcast '{ep_info.get('podcast_title')}' aufgelöst: '{ep_info.get('episode_title')}' -> URI: {target_id}")
+                    metadata["episode_id"] = ep_info.get("episode_id")
+                    logger.info(f"ABS Podcast '{ep_info.get('podcast_title')}' aufgelöst: '{ep_info.get('episode_title')}' -> Sende Podcast-URI: {target_id}")
                 else:
-                    target_id = self._build_abs_podcast_uri(podcast_id, reader_prefix=abs_provider_prefix)
-                    media_type = "podcast"
-                    extra_params["start_item"] = "latest"
                     metadata["title"] = tag.get("alias")
+                    metadata["podcast_name"] = tag.get("alias")
                     logger.warning(f"Konnte Episode für Podcast '{podcast_id}' nicht über ABS auflösen. Sende URI: {target_id}")
 
         # 4d. Album (Music Assistant Library)
@@ -521,6 +520,9 @@ class MQTTService:
         # 4h. Benutzerdefiniert
         else:
             action_type_out = action_type.lower()
+
+        if start_from_beginning:
+            extra_params["seek_position"] = 0
 
         # 5. Finalen standardisierten Action-Payload zusammenbauen und publizieren
         final_payload = {
