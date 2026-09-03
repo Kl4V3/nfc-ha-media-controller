@@ -232,6 +232,34 @@ class MQTTService:
         else:
             return f"audiobookshelf://audiobook/{clean_id}"
 
+    def _build_abs_podcast_uri(self, podcast_id: str, episode_id: Optional[str] = None, reader_prefix: Optional[str] = None) -> str:
+        """
+        Baut die standardisierte Music Assistant / ABS URI für einen Podcast oder eine Episode.
+        Unterstützt:
+        - Spezifische Episode: audiobookshelf--<instance>://podcast_episode/<episode_id>
+        - Ganzer Podcast: audiobookshelf--<instance>://podcast/<podcast_id>
+        """
+        clean_id = (episode_id or podcast_id or "").strip()
+        if "://" in clean_id:
+            return clean_id
+
+        route = "podcast_episode" if episode_id else "podcast"
+        prefix = (reader_prefix or "").strip() or (self.config.audiobookshelf.provider_prefix or "").strip()
+        instance_id = (self.config.audiobookshelf.mass_instance_id or "").strip()
+
+        if prefix:
+            prefix_clean = prefix.rstrip(":/")
+            if prefix_clean.endswith("://podcast") or prefix_clean.endswith("://podcast_episode"):
+                base = prefix_clean.split("://")[0]
+                return f"{base}://{route}/{clean_id}"
+            if "://" in prefix_clean:
+                return f"{prefix_clean}/{clean_id}"
+            return f"{prefix_clean}://{route}/{clean_id}"
+        elif instance_id:
+            return f"audiobookshelf--{instance_id}://{route}/{clean_id}"
+        else:
+            return f"audiobookshelf://{route}/{clean_id}"
+
     def process_rfid_event(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Zentrale Geschäftslogik für eingehende RFID-Events (Auflegen/Entfernen).
@@ -362,7 +390,8 @@ class MQTTService:
         # 4. Konfigurierter Tag -> Aktion ermitteln
         volume = tag.get("volume") if tag.get("volume") is not None else self.config.media.default_volume
         random_flag = tag.get("random", False)
-        extra_params = tag.get("extra_params_parsed", {})
+        start_from_beginning = tag.get("start_from_beginning", False)
+        extra_params = dict(tag.get("extra_params_parsed", {}))
         target_id = tag.get("target_id", "").strip()
         metadata = {
             "alias": tag.get("alias")
@@ -370,6 +399,14 @@ class MQTTService:
 
         normalized_action = action_type.lower()
         media_type = "audiobook"
+
+        # Zufallswiedergabe (Random/Shuffle) darf es für Hörbücher/Serien, Licht, Szenen und Podcasts NICHT geben:
+        if normalized_action in ["serie", "abs_serie", "hoerbuch", "hörbuch", "audiobook", "licht", "light", "szene", "scene", "podcast"]:
+            random_flag = False
+
+        # Status "von vorne immer starten" (start_from_beginning) ist nur für Serie und Hörbuch zulässig:
+        if normalized_action not in ["serie", "abs_serie", "hoerbuch", "hörbuch", "audiobook"]:
+            start_from_beginning = False
 
         # 4a. Audiobookshelf Serie (dynamische Auflösung des nächsten unfertigen Buchs)
         if normalized_action in ["serie", "abs_serie"]:
@@ -386,10 +423,16 @@ class MQTTService:
                 metadata["sequence"] = book_info.get("sequence")
                 metadata["total_books"] = book_info.get("total_books")
                 logger.info(f"ABS Serie '{book_info.get('series_name')}' aufgelöst: '{book_info.get('title')}' -> URI: {target_id}")
+
+                if start_from_beginning:
+                    logger.info(f"Tag ist auf 'start_from_beginning' gesetzt -> Setze Buch '{book_id}' in ABS auf Anfang zurück.")
+                    self.abs_client.reset_item_progress(book_id, user_token=abs_user_token)
             else:
                 clean_series_id = target_id.split("/")[-1]
                 target_id = self._build_abs_uri(clean_series_id, reader_prefix=abs_provider_prefix)
                 logger.warning(f"Konnte nächstes Buch für Serie '{series_id}' nicht über ABS auflösen. Sende URI: {target_id}")
+                if start_from_beginning:
+                    self.abs_client.reset_item_progress(clean_series_id, user_token=abs_user_token)
 
             action_type_out = "media"
             media_type = "audiobook"
@@ -406,8 +449,42 @@ class MQTTService:
             else:
                 clean_item_id = target_clean.split("/")[-1]
                 target_id = self._build_abs_uri(clean_item_id, reader_prefix=abs_provider_prefix)
+                if start_from_beginning:
+                    logger.info(f"Tag ist auf 'start_from_beginning' gesetzt -> Setze Hörbuch '{clean_item_id}' in ABS auf Anfang zurück.")
+                    self.abs_client.reset_item_progress(clean_item_id, user_token=abs_user_token)
 
-        # 4c. Album (Music Assistant Library)
+        # 4c. Podcast
+        elif normalized_action in ["podcast"]:
+            action_type_out = "media"
+            target_clean = target_id.strip()
+            if target_clean.startswith("library://podcast/") or target_clean.startswith("mass://podcast/"):
+                target_id = target_clean.replace("mass://podcast/", "library://podcast/")
+                media_type = "podcast"
+                extra_params["start_item"] = "latest"
+                metadata["title"] = tag.get("alias")
+                metadata["podcast_name"] = tag.get("alias")
+                logger.info(f"Music Assistant Podcast URI erkannt: '{target_id}' mit start_item='latest'")
+            else:
+                podcast_id = target_clean.split("/")[-1]
+                library_id = (tag.get("library_id") or "").strip() or None
+                logger.info(f"Ermittle aktuellste unfertige Episode für ABS-Podcast '{podcast_id}' (Library: '{library_id or 'Auto'}')...")
+                ep_info = self.abs_client.resolve_latest_podcast_episode(podcast_id, library_id=library_id, user_token=abs_user_token)
+                if ep_info and ep_info.get("episode_id"):
+                    episode_id = ep_info["episode_id"]
+                    target_id = self._build_abs_podcast_uri(podcast_id, episode_id=episode_id, reader_prefix=abs_provider_prefix)
+                    media_type = "podcast_episode"
+                    metadata["title"] = ep_info.get("episode_title")
+                    metadata["podcast_name"] = ep_info.get("podcast_title")
+                    metadata["pub_date"] = str(ep_info.get("pub_date") or "")
+                    logger.info(f"ABS Podcast '{ep_info.get('podcast_title')}' aufgelöst: '{ep_info.get('episode_title')}' -> URI: {target_id}")
+                else:
+                    target_id = self._build_abs_podcast_uri(podcast_id, reader_prefix=abs_provider_prefix)
+                    media_type = "podcast"
+                    extra_params["start_item"] = "latest"
+                    metadata["title"] = tag.get("alias")
+                    logger.warning(f"Konnte Episode für Podcast '{podcast_id}' nicht über ABS auflösen. Sende URI: {target_id}")
+
+        # 4d. Album (Music Assistant Library)
         elif normalized_action in ["album"]:
             action_type_out = "media"
             media_type = "album"
@@ -420,7 +497,7 @@ class MQTTService:
                 clean_album_id = target_clean.split("/")[-1]
                 target_id = f"library://album/{clean_album_id}"
 
-        # 4d. Playlist (Music Assistant Library)
+        # 4e. Playlist (Music Assistant Library)
         elif normalized_action in ["playlist"]:
             action_type_out = "media"
             media_type = "playlist"
@@ -433,15 +510,15 @@ class MQTTService:
                 clean_pl_id = target_clean.split("/")[-1]
                 target_id = f"library://playlist/{clean_pl_id}"
 
-        # 4e. Lichtsteuerung
+        # 4f. Lichtsteuerung
         elif normalized_action in ["licht", "light"]:
             action_type_out = "light"
 
-        # 4f. Szenensteuerung
+        # 4g. Szenensteuerung
         elif normalized_action in ["szene", "scene"]:
             action_type_out = "scene"
 
-        # 4g. Benutzerdefiniert
+        # 4h. Benutzerdefiniert
         else:
             action_type_out = action_type.lower()
 
@@ -454,6 +531,7 @@ class MQTTService:
             "target_id": target_id,
             "volume": volume,
             "random": random_flag,
+            "start_from_beginning": start_from_beginning,
             "extra_params": extra_params
         }
 
@@ -488,6 +566,7 @@ class MQTTService:
             "target_player": target_player,
             "target_id": target_id,
             "resolved_title": metadata.get("title"),
+            "start_from_beginning": start_from_beginning,
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
         }
         self._broadcast_event(event)

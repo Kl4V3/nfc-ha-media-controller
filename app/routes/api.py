@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 from fastapi.responses import PlainTextResponse, Response
 from pydantic import BaseModel, Field
 
+from app import __version__
 from app.config import AppConfig
 from app.database import (
     get_all_tags,
@@ -36,6 +37,7 @@ class TagModel(BaseModel):
     target_id: Optional[str] = Field(default="")
     volume: Optional[int] = Field(default=None, ge=0, le=100)
     random: Optional[bool] = Field(default=False)
+    start_from_beginning: Optional[bool] = Field(default=False)
     extra_params: Optional[Any] = Field(default="{}")
 
 
@@ -188,6 +190,23 @@ def resolve_abs_series(series_id: str, request: Request, token: Optional[str] = 
     res = abs_client.resolve_next_book_in_series(series_id, user_token=token)
     if not res:
         raise HTTPException(status_code=404, detail="Could not resolve book in series")
+    return res
+
+
+@api_router.get("/abs/podcasts")
+def get_abs_podcasts(request: Request, q: Optional[str] = None, library_id: Optional[str] = None, token: Optional[str] = None):
+    abs_client = request.app.state.abs_client
+    if q and q.strip():
+        return abs_client.search_podcasts(query=q, library_id=library_id, user_token=token)
+    return abs_client.get_podcast_list(library_id=library_id, user_token=token)
+
+
+@api_router.get("/abs/resolve-podcast/{podcast_id}")
+def resolve_abs_podcast(podcast_id: str, request: Request, library_id: Optional[str] = None, token: Optional[str] = None):
+    abs_client = request.app.state.abs_client
+    res = abs_client.resolve_latest_podcast_episode(podcast_id, library_id=library_id, user_token=token)
+    if not res:
+        raise HTTPException(status_code=404, detail="Could not resolve latest episode in podcast")
     return res
 
 
@@ -501,7 +520,7 @@ def get_firmware_manifest(hardware_type: str):
     tmpl_info = FIRMWARE_TEMPLATES[hardware_type]
     return {
         "name": tmpl_info["name"],
-        "version": "0.3.1",
+        "version": __version__,
         "home_assistant_domain": "esphome",
         "new_install_prompt_erase": True,
         "builds": [

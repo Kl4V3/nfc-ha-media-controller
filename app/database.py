@@ -52,6 +52,7 @@ def init_db(db_path: str):
                     target_id TEXT,
                     volume INTEGER,
                     random BOOLEAN DEFAULT 0,
+                    start_from_beginning BOOLEAN DEFAULT 0,
                     extra_params TEXT,
                     last_scanned DATETIME,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -62,6 +63,12 @@ def init_db(db_path: str):
             # Migration falls library_id in älterer DB-Version fehlt
             try:
                 conn.execute("ALTER TABLE tags ADD COLUMN library_id TEXT")
+            except Exception:
+                pass
+
+            # Migration falls start_from_beginning in älterer DB-Version fehlt
+            try:
+                conn.execute("ALTER TABLE tags ADD COLUMN start_from_beginning BOOLEAN DEFAULT 0")
             except Exception:
                 pass
 
@@ -97,7 +104,7 @@ def get_all_tags(db_path: str) -> List[Dict[str, Any]]:
     conn = get_db_connection(db_path)
     try:
         cursor = conn.execute("""
-            SELECT tag_id, alias, action_type, library_id, target_id, volume, random, 
+            SELECT tag_id, alias, action_type, library_id, target_id, volume, random, start_from_beginning,
                    extra_params, last_scanned, created_at, updated_at
             FROM tags 
             ORDER BY 
@@ -110,6 +117,7 @@ def get_all_tags(db_path: str) -> List[Dict[str, Any]]:
         for row in rows:
             tag = dict(row)
             tag["random"] = bool(tag["random"])
+            tag["start_from_beginning"] = bool(tag.get("start_from_beginning", 0))
             if tag["extra_params"]:
                 try:
                     tag["extra_params_parsed"] = json.loads(tag["extra_params"])
@@ -133,6 +141,7 @@ def get_tag_by_id(db_path: str, tag_id: str) -> Optional[Dict[str, Any]]:
             return None
         tag = dict(row)
         tag["random"] = bool(tag["random"])
+        tag["start_from_beginning"] = bool(tag.get("start_from_beginning", 0))
         if tag["extra_params"]:
             try:
                 tag["extra_params_parsed"] = json.loads(tag["extra_params"])
@@ -162,8 +171,8 @@ def auto_discover_or_update_tag(db_path: str, tag_id: str) -> Dict[str, Any]:
                 # Neu anlegen (Auto-Discovery)
                 default_alias = f"Unbekannter Tag {tag_id}"
                 conn.execute("""
-                    INSERT INTO tags (tag_id, alias, action_type, library_id, target_id, volume, random, extra_params, last_scanned, created_at, updated_at)
-                    VALUES (?, ?, '', '', '', NULL, 0, '{}', ?, ?, ?)
+                    INSERT INTO tags (tag_id, alias, action_type, library_id, target_id, volume, random, start_from_beginning, extra_params, last_scanned, created_at, updated_at)
+                    VALUES (?, ?, '', '', '', NULL, 0, 0, '{}', ?, ?, ?)
                 """, (tag_id, default_alias, now, now, now))
                 logger.info(f"Auto-Discovery: Neuer Tag '{tag_id}' in Datenbank angelegt.")
                 return {
@@ -174,6 +183,7 @@ def auto_discover_or_update_tag(db_path: str, tag_id: str) -> Dict[str, Any]:
                     "target_id": "",
                     "volume": None,
                     "random": False,
+                    "start_from_beginning": False,
                     "extra_params": "{}",
                     "extra_params_parsed": {},
                     "is_new": True,
@@ -184,6 +194,7 @@ def auto_discover_or_update_tag(db_path: str, tag_id: str) -> Dict[str, Any]:
                 conn.execute("UPDATE tags SET last_scanned = ? WHERE tag_id = ?", (now, tag_id))
                 tag = dict(row)
                 tag["random"] = bool(tag["random"])
+                tag["start_from_beginning"] = bool(tag.get("start_from_beginning", 0))
                 tag["last_scanned"] = now
                 tag["is_new"] = False
                 if tag["extra_params"]:
@@ -208,6 +219,7 @@ def upsert_tag(db_path: str, tag_data: Dict[str, Any]) -> Dict[str, Any]:
     target_id = tag_data.get("target_id", "")
     volume = tag_data.get("volume")
     random_flag = 1 if tag_data.get("random") else 0
+    start_from_beginning_flag = 1 if tag_data.get("start_from_beginning") else 0
     extra_params = tag_data.get("extra_params")
 
     if isinstance(extra_params, dict):
@@ -222,8 +234,8 @@ def upsert_tag(db_path: str, tag_data: Dict[str, Any]) -> Dict[str, Any]:
     try:
         with conn:
             conn.execute("""
-                INSERT INTO tags (tag_id, alias, action_type, library_id, target_id, volume, random, extra_params, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO tags (tag_id, alias, action_type, library_id, target_id, volume, random, start_from_beginning, extra_params, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(tag_id) DO UPDATE SET
                     alias = excluded.alias,
                     action_type = excluded.action_type,
@@ -231,9 +243,10 @@ def upsert_tag(db_path: str, tag_data: Dict[str, Any]) -> Dict[str, Any]:
                     target_id = excluded.target_id,
                     volume = excluded.volume,
                     random = excluded.random,
+                    start_from_beginning = excluded.start_from_beginning,
                     extra_params = excluded.extra_params,
                     updated_at = excluded.updated_at
-            """, (tag_id, alias, action_type, library_id, target_id, volume, random_flag, extra_params_str, now, now))
+            """, (tag_id, alias, action_type, library_id, target_id, volume, random_flag, start_from_beginning_flag, extra_params_str, now, now))
         return get_tag_by_id(db_path, tag_id)
     finally:
         conn.close()

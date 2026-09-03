@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="{{ lang }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NFC Media Controller</title>
-    <meta name="description" content="RFID/NFC Middleware für ESPHome, Audiobookshelf & Home Assistant">
+    <title>{{ t("app_title") }}</title>
+    <meta name="description" content="{{ t("app_description") }}">
     <link rel="icon" type="image/x-icon" href="/static/img/favicon.ico">
     <link rel="icon" type="image/png" href="/static/img/favicon.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -27,25 +27,25 @@
                     </svg>
                 </div>
                 <div class="brand-text">
-                    <h1>NFC Media Controller</h1>
+                    <h1>{{ t("app_title") }}</h1>
                     <span class="version-badge">v{{ version }}</span>
                 </div>
             </div>
 
             <div class="header-status">
-                <div id="status-mqtt" class="status-indicator status-disconnected" title="MQTT Broker Verbindung">
+                <div id="status-mqtt" class="status-indicator status-disconnected" title="MQTT Broker Status">
                     <span class="dot"></span>
-                    <span class="label">MQTT: Verbinde...</span>
+                    <span class="label">{{ t("status_mqtt_connecting") }}</span>
                 </div>
                 <div id="status-abs" class="status-indicator status-unknown" title="Audiobookshelf Status">
                     <span class="dot"></span>
-                    <span class="label">ABS: Prüfe...</span>
+                    <span class="label">{{ t("status_abs_checking") }}</span>
                 </div>
                 <div id="status-ws" class="status-indicator status-disconnected" title="WebSocket Live-Feed">
                     <span class="dot"></span>
-                    <span class="label">Live</span>
+                    <span class="label">{{ t("status_ws_live") }}</span>
                 </div>
-                <button id="btn-open-logs" class="btn btn-sm btn-secondary" style="margin-left: 6px;">📋 Logs</button>
+                <button id="btn-open-logs" class="btn btn-sm btn-secondary" style="margin-left: 6px;">{{ t("btn_logs") }}</button>
             </div>
         </div>
     </header>
@@ -59,10 +59,10 @@
                 <div class="live-pulse"></div>
                 <div class="live-info">
                     <span class="live-tag-type" id="live-event-type">EVENT</span>
-                    <strong id="live-tag-name">Tag gescannt</strong>
+                    <strong id="live-tag-name">{{ t("live_event_scanned") }}</strong>
                     <span class="live-details" id="live-event-details">Details...</span>
                 </div>
-                <button id="live-banner-edit-btn" class="btn btn-sm btn-primary">Konfigurieren</button>
+                <button id="live-banner-edit-btn" class="btn btn-sm btn-primary">{{ t("btn_configure") }}</button>
             </div>
         </section>
 
@@ -70,23 +70,23 @@
         <nav class="nav-tabs">
             <button class="tab-btn active" data-tab="tags-tab">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
-                NFC-Tags (<span id="tags-count">0</span>)
+                {{ t("tab_tags") }} (<span id="tags-count">0</span>)
             </button>
             <button class="tab-btn" data-tab="readers-tab">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
-                Reader & Zonen (<span id="readers-count">0</span>)
+                {{ t("tab_readers") }} (<span id="readers-count">0</span>)
             </button>
             <button class="tab-btn" data-tab="history-tab">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                Live-Historie
+                {{ t("tab_history") }}
             </button>
             <button class="tab-btn" data-tab="tools-tab">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-                Test-Simulator & ABS
+                {{ t("tab_tools") }}
             </button>
             <button class="tab-btn" data-tab="flasher-tab">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                Firmware & Flasher
+                {{ t("tab_flasher") }}
             </button>
         </nav>
 
@@ -97,29 +97,30 @@
             <div class="section-toolbar">
                 <div class="search-box">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                    <input type="text" id="tags-search-input" placeholder="Nach ID, Alias oder Aktion filtern...">
+                    <input type="text" id="tags-search-input" placeholder="{{ t('search_tags_placeholder') }}">
                 </div>
 
                 <div class="filter-group">
                     <select id="tags-filter-status" class="form-select">
-                        <option value="all">Alle Tags</option>
-                        <option value="unconfigured">⚠️ Unkonfiguriert (Achtung)</option>
-                        <option value="configured">✅ Konfiguriert</option>
+                        <option value="all">{{ t("filter_all_tags") }}</option>
+                        <option value="unconfigured">{{ t("filter_unconfigured") }}</option>
+                        <option value="configured">{{ t("filter_configured") }}</option>
                     </select>
 
                     <select id="tags-filter-type" class="form-select">
-                        <option value="all">Alle Typen</option>
-                        <option value="Serie">Serie (Audiobookshelf)</option>
-                        <option value="Hoerbuch">Hörbuch</option>
-                        <option value="Album">Album (Music Assistant)</option>
-                        <option value="Playlist">Playlist</option>
-                        <option value="Licht">Licht</option>
-                        <option value="Szene">Szene</option>
+                        <option value="all">{{ t("filter_all_types") }}</option>
+                        <option value="Serie">{{ t("type_series") }}</option>
+                        <option value="Hoerbuch">{{ t("type_audiobook") }}</option>
+                        <option value="Podcast">{{ t("type_podcast") }}</option>
+                        <option value="Album">{{ t("type_album") }}</option>
+                        <option value="Playlist">{{ t("type_playlist") }}</option>
+                        <option value="Licht">{{ t("type_light") }}</option>
+                        <option value="Szene">{{ t("type_scene") }}</option>
                     </select>
 
                     <button id="btn-add-tag" class="btn btn-primary">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                        Tag manuell anlegen
+                        {{ t("btn_add_tag") }}
                     </button>
                 </div>
             </div>
@@ -129,23 +130,23 @@
                 <table class="data-table" id="tags-table">
                     <thead>
                         <tr>
-                            <th>Status</th>
-                            <th>Tag ID</th>
-                            <th>Alias</th>
-                            <th>Aktionstyp</th>
-                            <th>Ziel (Target ID)</th>
-                            <th>Lautstärke</th>
-                            <th>Zufall</th>
-                            <th>Zuletzt gescannt</th>
-                            <th class="text-right">Aktionen</th>
+                            <th>{{ t("th_status") }}</th>
+                            <th>{{ t("th_tag_id") }}</th>
+                            <th>{{ t("th_alias") }}</th>
+                            <th>{{ t("th_action_type") }}</th>
+                            <th>{{ t("th_target_id") }}</th>
+                            <th>{{ t("th_volume") }}</th>
+                            <th>{{ t("th_playback_options") }}</th>
+                            <th>{{ t("th_last_scanned") }}</th>
+                            <th class="text-right">{{ t("th_actions") }}</th>
                         </tr>
                     </thead>
                     <tbody id="tags-table-body">
-                        <!-- Wird via JavaScript befüllt -->
+                        <!-- Filled by JavaScript -->
                     </tbody>
                 </table>
                 <div id="tags-empty-state" class="empty-state hidden">
-                    <p>Keine RFID/NFC-Tags gefunden. Scanne einen Tag am Reader oder lege manuell einen an.</p>
+                    <p>{{ t("tags_empty") }}</p>
                 </div>
             </div>
         </section>
@@ -156,11 +157,11 @@
         <section id="readers-tab" class="tab-pane">
             <div class="section-toolbar">
                 <p class="section-desc">
-                    Verbinde deine ESPHome-Reader (z. B. <code>reader_kizi</code>) mit den entsprechenden Home Assistant Media-Playern und ABS-Nutzer-Tokens.
+                    {{ t("readers_desc") }}
                 </p>
                 <button id="btn-add-reader" class="btn btn-primary">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                    Reader hinzufügen
+                    {{ t("btn_add_reader") }}
                 </button>
             </div>
 
@@ -168,19 +169,19 @@
                 <table class="data-table" id="readers-table">
                     <thead>
                         <tr>
-                            <th>Reader ID (ESPHome)</th>
-                            <th>Ziel-Player (Home Assistant)</th>
-                            <th>ABS User-Token</th>
-                            <th>Notizen / Raum</th>
-                            <th class="text-right">Aktionen</th>
+                            <th>{{ t("th_reader_id") }}</th>
+                            <th>{{ t("th_target_player") }}</th>
+                            <th>{{ t("th_abs_user_token") }}</th>
+                            <th>{{ t("th_notes") }}</th>
+                            <th class="text-right">{{ t("th_actions") }}</th>
                         </tr>
                     </thead>
                     <tbody id="readers-table-body">
-                        <!-- Wird via JavaScript befüllt -->
+                        <!-- Filled by JavaScript -->
                     </tbody>
                 </table>
                 <div id="readers-empty-state" class="empty-state hidden">
-                    <p>Noch keine Reader registriert. Lege deinen ersten Reader an (z. B. <code>reader_kizi</code> -> <code>media_player.kinderzimmer</code>).</p>
+                    <p>{{ t("readers_empty") }}</p>
                 </div>
             </div>
         </section>
@@ -190,24 +191,24 @@
              =================================================================== -->
         <section id="history-tab" class="tab-pane">
             <div class="section-toolbar">
-                <p class="section-desc">Echtzeit-Protokoll der letzten 50 NFC-Events und Aktionen.</p>
-                <button id="btn-refresh-history" class="btn btn-secondary btn-sm">Aktualisieren</button>
+                <p class="section-desc">{{ t("history_desc") }}</p>
+                <button id="btn-refresh-history" class="btn btn-secondary btn-sm">{{ t("btn_refresh_history") }}</button>
             </div>
 
             <div class="table-container">
                 <table class="data-table" id="history-table">
                     <thead>
                         <tr>
-                            <th>Zeitpunkt</th>
-                            <th>Status</th>
-                            <th>Tag ID / Alias</th>
-                            <th>Reader</th>
-                            <th>Ausgeführte Aktion</th>
-                            <th>MQTT Payload</th>
+                            <th>{{ t("th_timestamp") }}</th>
+                            <th>{{ t("th_status") }}</th>
+                            <th>{{ t("th_tag_id") }} / {{ t("th_alias") }}</th>
+                            <th>{{ t("th_reader") }}</th>
+                            <th>{{ t("th_action_executed") }}</th>
+                            <th>{{ t("th_mqtt_payload") }}</th>
                         </tr>
                     </thead>
                     <tbody id="history-table-body">
-                        <!-- Wird via JavaScript befüllt -->
+                        <!-- Filled by JavaScript -->
                     </tbody>
                 </table>
             </div>
@@ -222,35 +223,35 @@
                 <!-- RFID Scanner Simulator -->
                 <div class="card">
                     <div class="card-header">
-                        <h3>RFID Test-Simulator</h3>
-                        <span class="badge badge-info">Hardware-Simulation</span>
+                        <h3>{{ t("sim_title") }}</h3>
+                        <span class="badge badge-info">{{ t("sim_badge") }}</span>
                     </div>
                     <div class="card-body">
-                        <p class="card-desc">Simuliere RFID-Scans direkt im Browser, um die MQTT-Logik ohne physische Tags zu testen.</p>
+                        <p class="card-desc">{{ t("sim_desc") }}</p>
                         
                         <form id="simulator-form">
                             <div class="form-group">
-                                <label for="sim-reader-id">Reader ID:</label>
+                                <label for="sim-reader-id">{{ t("sim_reader_id") }}</label>
                                 <input type="text" id="sim-reader-id" class="form-input" placeholder="z. B. reader_kizi" required>
                             </div>
 
                             <div class="form-group">
-                                <label for="sim-tag-id">Tag ID:</label>
+                                <label for="sim-tag-id">{{ t("sim_tag_id") }}</label>
                                 <input type="text" id="sim-tag-id" class="form-input font-mono" placeholder="z. B. 04A1B2C3D4" required>
                             </div>
 
                             <div class="form-actions">
                                 <button type="button" id="btn-sim-scan" class="btn btn-success">
-                                    ▶ Auflegen (scanned)
+                                    {{ t("sim_btn_place") }}
                                 </button>
                                 <button type="button" id="btn-sim-remove" class="btn btn-danger">
-                                    ⏹ Entfernen (removed)
+                                    {{ t("sim_btn_remove") }}
                                 </button>
                             </div>
                         </form>
 
                         <div class="sim-result-box hidden" id="sim-result-container">
-                            <label>Simulations-Ergebnis:</label>
+                            <label>{{ t("sim_result_label") }}</label>
                             <pre id="sim-result-output" class="code-block"></pre>
                         </div>
                     </div>
@@ -259,24 +260,25 @@
                 <!-- Audiobookshelf Explorer -->
                 <div class="card">
                     <div class="card-header">
-                        <h3>Audiobookshelf Explorer</h3>
+                        <h3>{{ t("abs_explorer_title") }}</h3>
                         <div class="header-tab-switch">
-                            <button id="btn-abs-tab-series" class="btn btn-sm btn-primary">📚 Serien</button>
-                            <button id="btn-abs-tab-items" class="btn btn-sm btn-secondary">🎧 Hörbücher / Tracks</button>
+                            <button id="btn-abs-tab-series" class="btn btn-sm btn-primary">{{ t("abs_tab_series") }}</button>
+                            <button id="btn-abs-tab-items" class="btn btn-sm btn-secondary">{{ t("abs_tab_items") }}</button>
+                            <button id="btn-abs-tab-podcasts" class="btn btn-sm btn-secondary">{{ t("abs_tab_podcasts") }}</button>
                         </div>
                     </div>
                     <div class="card-body">
-                        <p class="card-desc">Durchsuche deine Audiobookshelf-Bibliotheken und übernimm Serien- oder Track-IDs mit 1-Klick in deine Tags.</p>
+                        <p class="card-desc">{{ t("abs_explorer_desc") }}</p>
                         
                         <div class="form-group">
                             <div class="search-box w-100">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                                <input type="text" id="abs-search-input" placeholder="In ABS suchen...">
+                                <input type="text" id="abs-search-input" placeholder="{{ t('abs_search_placeholder') }}">
                             </div>
                         </div>
 
                         <div id="abs-content-list" class="abs-list-container">
-                            <p class="text-muted text-center py-4">Lade Inhalte aus Audiobookshelf...</p>
+                            <p class="text-muted text-center py-4">{{ t("abs_loading") }}</p>
                         </div>
                     </div>
                 </div>
@@ -292,14 +294,14 @@
             <!-- 1. Hardware-Profil & Anschlussbelegung -->
             <div class="card mb-4" style="margin-bottom: 20px;">
                 <div class="card-header">
-                    <h3>🛠️ 1. Hardware-Profil & Anschlussbelegung</h3>
-                    <span class="badge badge-primary">Schritt 1</span>
+                    <h3>{{ t("flasher_step1_title") }}</h3>
+                    <span class="badge badge-primary">{{ t("flasher_step1_badge") }}</span>
                 </div>
                 <div class="card-body">
-                    <p class="card-desc">Wähle dein Hardware-Setup. Die Pinbelegung, LED-Farbcodes und die passende ESPHome-Konfiguration passen sich automatisch an.</p>
+                    <p class="card-desc">{{ t("flasher_step1_desc") }}</p>
 
                     <div class="form-group" style="max-width: 550px;">
-                        <label for="flasher-hw-select">Hardware-Profil</label>
+                        <label for="flasher-hw-select">{{ t("flasher_hw_profile") }}</label>
                         <select id="flasher-hw-select" class="form-select" style="font-size: 14px; font-weight: 500;">
                             <option value="m5atom_lite_rfid">⭐ M5Stack ATOM Lite + RFID 2 Unit (Grove I2C)</option>
                             <option value="esp32_pn532_i2c">ESP32 NodeMCU + PN532 NFC (I2C)</option>
@@ -311,17 +313,17 @@
                     <div id="flasher-hw-info-card" style="margin-top: 16px; padding: 16px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-md);">
                         <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; margin-bottom: 8px;">
                             <h4 id="flasher-hw-name" style="margin: 0; font-size: 15px; color: var(--text-primary);">M5Stack ATOM Lite + RFID 2 Unit</h4>
-                            <span id="flasher-hw-recommended-badge" class="badge badge-success">⭐ Empfohlen (Plug & Play)</span>
+                            <span id="flasher-hw-recommended-badge" class="badge badge-success">⭐ Recommended (Plug & Play)</span>
                         </div>
                         <p id="flasher-hw-desc" class="text-xs text-muted" style="margin-bottom: 14px;"></p>
 
                         <div class="grid-2-col" style="gap: 16px;">
                             <div>
-                                <h5 style="font-size: 12px; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary);">Anschlussbelegung:</h5>
+                                <h5 style="font-size: 12px; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary);">{{ t("flasher_pinout_title") }}</h5>
                                 <div id="flasher-pinout-table"></div>
                             </div>
                             <div id="flasher-led-guide-section">
-                                <h5 style="font-size: 12px; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary);">Status-LED Farbcodes:</h5>
+                                <h5 style="font-size: 12px; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary);">{{ t("flasher_led_title") }}</h5>
                                 <div id="flasher-led-guide-list" class="led-guide-grid"></div>
                             </div>
                         </div>
@@ -332,64 +334,64 @@
             <!-- 2. ESPHome Konfiguration & Download -->
             <div class="card mb-4" style="margin-bottom: 20px;">
                 <div class="card-header">
-                    <h3>📄 2. Individuelle ESPHome Konfiguration (.yaml)</h3>
-                    <span class="badge badge-success">Auto-MQTT</span>
+                    <h3>{{ t("flasher_step2_title") }}</h3>
+                    <span class="badge badge-success">{{ t("flasher_step2_badge") }}</span>
                 </div>
                 <div class="card-body">
-                    <p class="card-desc">Die Zugangsdaten deines Docker-Servers werden automatisch in die Konfiguration eingesetzt. Lade die <code>.yaml</code> Datei herunter oder kopiere sie für Home Assistant.</p>
+                    <p class="card-desc">{{ t("flasher_step2_desc") }}</p>
 
                     <div class="grid-2-col" style="gap: 20px;">
                         <div>
-                            <h4 style="font-size: 14px; margin-bottom: 12px;">Parameter konfigurieren:</h4>
+                            <h4 style="font-size: 14px; margin-bottom: 12px;">{{ t("flasher_configure_params") }}</h4>
 
                             <div class="form-row-2">
                                 <div class="form-group">
-                                    <label for="flasher-reader-select">Reader-Zuordnung</label>
+                                    <label for="flasher-reader-select">{{ t("flasher_reader_assignment") }}</label>
                                     <select id="flasher-reader-select" class="form-select font-mono">
-                                        <option value="__custom__">➕ Neuer Reader...</option>
+                                        <option value="__custom__">{{ t("flasher_new_reader") }}</option>
                                     </select>
                                 </div>
                                 <div class="form-group">
-                                    <label for="flasher-reader-id-input">Reader ID (MQTT Topic)</label>
+                                    <label for="flasher-reader-id-input">{{ t("flasher_reader_id_topic") }}</label>
                                     <input type="text" id="flasher-reader-id-input" class="form-input font-mono" value="reader_atom_1" placeholder="reader_kizi">
                                 </div>
                             </div>
 
                             <div class="form-row-2">
                                 <div class="form-group">
-                                    <label for="flasher-wifi-ssid">WLAN SSID (Optional)</label>
-                                    <input type="text" id="flasher-wifi-ssid" class="form-input" placeholder="MeinWLAN">
+                                    <label for="flasher-wifi-ssid">{{ t("flasher_wifi_ssid") }}</label>
+                                    <input type="text" id="flasher-wifi-ssid" class="form-input" placeholder="MyWiFi">
                                 </div>
                                 <div class="form-group">
-                                    <label for="flasher-wifi-pass">WLAN Passwort (Optional)</label>
-                                    <input type="password" id="flasher-wifi-pass" class="form-input" placeholder="WLAN-Passwort">
+                                    <label for="flasher-wifi-pass">{{ t("flasher_wifi_pass") }}</label>
+                                    <input type="password" id="flasher-wifi-pass" class="form-input" placeholder="WiFi-Password">
                                 </div>
                             </div>
 
                             <div class="form-row-2">
                                 <div class="form-group">
-                                    <label for="flasher-mqtt-broker">MQTT Broker (aus Docker)</label>
+                                    <label for="flasher-mqtt-broker">{{ t("flasher_mqtt_broker") }}</label>
                                     <input type="text" id="flasher-mqtt-broker" class="form-input font-mono" readonly>
                                 </div>
                                 <div class="form-group">
-                                    <label for="flasher-mqtt-port">MQTT Port</label>
+                                    <label for="flasher-mqtt-port">{{ t("flasher_mqtt_port") }}</label>
                                     <input type="text" id="flasher-mqtt-port" class="form-input font-mono" readonly>
                                 </div>
                             </div>
 
                             <div class="flasher-actions" style="margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap;">
                                 <button type="button" id="btn-download-yaml" class="btn btn-primary">
-                                    💾 ESPHome YAML herunterladen
+                                    {{ t("flasher_download_yaml") }}
                                 </button>
                                 <button type="button" id="btn-copy-yaml" class="btn btn-secondary">
-                                    📋 In Zwischenablage kopieren
+                                    {{ t("flasher_copy_yaml") }}
                                 </button>
                             </div>
                         </div>
 
                         <div>
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                                <h4 style="font-size: 14px; margin: 0;">Generierte YAML-Vorschau:</h4>
+                                <h4 style="font-size: 14px; margin: 0;">{{ t("flasher_preview_title") }}</h4>
                                 <span id="yaml-filename-badge" class="badge badge-secondary font-mono" style="font-size: 10px;">esphome_reader_atom_1.yaml</span>
                             </div>
                             <pre id="flasher-yaml-preview" class="code-block" style="max-height: 280px; font-size: 11px; overflow-y: auto; white-space: pre-wrap;"></pre>
@@ -401,44 +403,44 @@
             <!-- 3. Flashen & Installieren Anleitung -->
             <div class="card">
                 <div class="card-header">
-                    <h3>🚀 3. Anleitung: Firmware auf den ESP32 flashen</h3>
-                    <span class="badge badge-primary">Schritt 3</span>
+                    <h3>{{ t("flasher_step3_title") }}</h3>
+                    <span class="badge badge-primary">{{ t("flasher_step3_badge") }}</span>
                 </div>
                 <div class="card-body">
                     <div class="grid-3-col" style="gap: 16px;">
                         
                         <!-- Option A -->
                         <div style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px;">
-                            <h4 style="font-size: 14px; margin-bottom: 8px; color: var(--accent-primary);">🏠 Methode 1: Home Assistant ESPHome</h4>
-                            <p class="text-xs text-muted" style="margin-bottom: 12px;">Der einfachste Weg, wenn du Home Assistant nutzt:</p>
+                            <h4 style="font-size: 14px; margin-bottom: 8px; color: var(--accent-primary);">{{ t("flasher_method1_title") }}</h4>
+                            <p class="text-xs text-muted" style="margin-bottom: 12px;">{{ t("flasher_method1_desc") }}</p>
                             <ol class="text-xs text-muted" style="padding-left: 16px; line-height: 1.6;">
-                                <li>Öffne das <strong>ESPHome Dashboard</strong> in Home Assistant.</li>
-                                <li>Klicke auf <strong>+ New Device</strong> und wähle <em>Open ESPHome Web</em>.</li>
-                                <li>Füge den generierten YAML-Code ein.</li>
-                                <li>Klicke auf <strong>Install</strong> (per USB oder Wireless).</li>
+                                <li>{{ t("flasher_method1_step1")|safe }}</li>
+                                <li>{{ t("flasher_method1_step2")|safe }}</li>
+                                <li>{{ t("flasher_method1_step3")|safe }}</li>
+                                <li>{{ t("flasher_method1_step4")|safe }}</li>
                             </ol>
                         </div>
 
                         <!-- Option B -->
                         <div style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px;">
-                            <h4 style="font-size: 14px; margin-bottom: 8px; color: var(--accent-success);">🌐 Methode 2: web.esphome.io (Browser)</h4>
-                            <p class="text-xs text-muted" style="margin-bottom: 12px;">Direkt im Browser ohne Installation:</p>
+                            <h4 style="font-size: 14px; margin-bottom: 8px; color: var(--accent-success);">{{ t("flasher_method2_title") }}</h4>
+                            <p class="text-xs text-muted" style="margin-bottom: 12px;">{{ t("flasher_method2_desc") }}</p>
                             <ol class="text-xs text-muted" style="padding-left: 16px; line-height: 1.6;">
-                                <li>Öffne <a href="https://web.esphome.io" target="_blank" rel="noopener noreferrer" class="text-primary" style="text-decoration: underline;">web.esphome.io</a> im Chrome/Edge Browser.</li>
-                                <li>Schließe den ESP per USB an und klicke auf <strong>Connect</strong>.</li>
-                                <li>Flashe die Basis-Firmware und verbinde das WLAN.</li>
-                                <li>Danach lädst du die erstellte YAML über OTA hoch.</li>
+                                <li>{{ t("flasher_method2_step1")|safe }}</li>
+                                <li>{{ t("flasher_method2_step2")|safe }}</li>
+                                <li>{{ t("flasher_method2_step3")|safe }}</li>
+                                <li>{{ t("flasher_method2_step4")|safe }}</li>
                             </ol>
                         </div>
 
                         <!-- Option C -->
                         <div style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px;">
-                            <h4 style="font-size: 14px; margin-bottom: 8px; color: var(--accent-warning);">💻 Methode 3: ESPHome CLI (Terminal)</h4>
-                            <p class="text-xs text-muted" style="margin-bottom: 12px;">Für Entwickler und Terminal-Nutzer:</p>
+                            <h4 style="font-size: 14px; margin-bottom: 8px; color: var(--accent-warning);">{{ t("flasher_method3_title") }}</h4>
+                            <p class="text-xs text-muted" style="margin-bottom: 12px;">{{ t("flasher_method3_desc") }}</p>
                             <div class="code-block font-mono" style="font-size: 11px; padding: 8px; margin-bottom: 8px;">
-                                esphome run &lt;datei&gt;.yaml
+                                esphome run &lt;file&gt;.yaml
                             </div>
-                            <p class="text-xs text-muted">Kompiliert und flasht die Konfigurationsdatei vollautomatisch über USB oder OTA.</p>
+                            <p class="text-xs text-muted">{{ t("flasher_method3_note") }}</p>
                         </div>
 
                     </div>
@@ -456,59 +458,60 @@
         <div class="modal-backdrop"></div>
         <div class="modal-dialog">
             <div class="modal-header">
-                <h3 id="tag-modal-title">Tag konfigurieren</h3>
+                <h3 id="tag-modal-title">{{ t("modal_tag_title_new") }}</h3>
                 <button class="modal-close" data-close-modal>&times;</button>
             </div>
             <form id="tag-form">
                 <div class="modal-body">
                     <div class="form-group">
-                        <label for="tag-id-input">Tag ID <span class="required">*</span></label>
+                        <label for="tag-id-input">{{ t("modal_tag_id") }} <span class="required">*</span></label>
                         <input type="text" id="tag-id-input" class="form-input font-mono" placeholder="z. B. 04A1B2C3D4" required>
                     </div>
 
                     <div class="form-group">
-                        <label for="tag-alias-input">Name / Alias <span class="required">*</span></label>
-                        <input type="text" id="tag-alias-input" class="form-input" placeholder="z. B. Die drei ??? Kids (Folge 1-100)" required>
+                        <label for="tag-alias-input">{{ t("modal_tag_alias") }} <span class="required">*</span></label>
+                        <input type="text" id="tag-alias-input" class="form-input" placeholder="z. B. Die drei ??? Kids" required>
                     </div>
 
                     <div class="form-row-2">
                         <div class="form-group">
-                            <label for="tag-action-type">Aktionstyp <span class="required">*</span></label>
+                            <label for="tag-action-type">{{ t("modal_action_type") }} <span class="required">*</span></label>
                             <select id="tag-action-type" class="form-select" required>
-                                <option value="">-- Typ wählen --</option>
-                                <option value="Serie">Serie (Audiobookshelf dynamisch)</option>
-                                <option value="Hoerbuch">Hörbuch (Einzelner Track / Album)</option>
-                                <option value="Album">Musik-Album (Music Assistant)</option>
-                                <option value="Playlist">Playlist (Music Assistant)</option>
-                                <option value="Licht">Lichtsteuerung</option>
-                                <option value="Szene">Szene</option>
-                                <option value="Custom">Benutzerdefiniert</option>
+                                <option value="">{{ t("modal_action_type_choose") }}</option>
+                                <option value="Serie">{{ t("type_series") }}</option>
+                                <option value="Hoerbuch">{{ t("type_audiobook") }}</option>
+                                <option value="Podcast">{{ t("type_podcast") }}</option>
+                                <option value="Album">{{ t("type_album") }}</option>
+                                <option value="Playlist">{{ t("type_playlist") }}</option>
+                                <option value="Licht">{{ t("type_light") }}</option>
+                                <option value="Szene">{{ t("type_scene") }}</option>
+                                <option value="Custom">{{ t("type_custom") }}</option>
                             </select>
                         </div>
 
                         <div class="form-group">
-                            <label for="tag-volume">Lautstärke (%)</label>
-                            <input type="number" id="tag-volume" class="form-input" min="0" max="100" placeholder="Standard: 20">
+                            <label for="tag-volume">{{ t("modal_volume") }}</label>
+                            <input type="number" id="tag-volume" class="form-input" min="0" max="100" placeholder="{{ t('modal_volume_placeholder') }}">
                         </div>
                     </div>
 
                     <div class="form-group hidden" id="group-library-id">
                         <label for="tag-library-id">
-                            Bibliothek (Library ID) <span class="required">*</span>
-                            <small class="helper-text">Audiobookshelf Bibliothek (wird bei Suche automatisch befüllt)</small>
+                            {{ t("modal_library_id") }} <span class="required">*</span>
+                            <small class="helper-text">{{ t("modal_library_helper") }}</small>
                         </label>
                         <input type="text" id="tag-library-id" class="form-input font-mono" placeholder="z. B. 79f6d5d2-50c9-4ce0-9fe4-edfcee4de854">
                     </div>
 
                     <div class="form-group">
                         <label for="tag-target-id">
-                            Ziel-ID (Target ID) <span class="required">*</span>
-                            <small class="helper-text" id="target-id-helper">ABS Serien-ID, Medien-URI oder Entität</small>
+                            {{ t("modal_target_id") }} <span class="required">*</span>
+                            <small class="helper-text" id="target-id-helper">Target ID</small>
                         </label>
                         <div class="input-with-btn">
-                            <input type="text" id="tag-target-id" class="form-input font-mono" placeholder="z. B. ser_abc123 oder mass://track/xyz" required>
+                            <input type="text" id="tag-target-id" class="form-input font-mono" placeholder="Target ID" required>
                             <button type="button" id="btn-toggle-modal-abs-picker" class="btn btn-secondary btn-sm">
-                                🔍 In ABS suchen
+                                {{ t("modal_btn_search_abs") }}
                             </button>
                         </div>
                     </div>
@@ -517,36 +520,46 @@
                     <div id="modal-abs-picker-box" class="abs-modal-picker hidden">
                         <div class="abs-modal-picker-header">
                             <div class="header-tab-switch">
-                                <button type="button" id="btn-modal-abs-tab-series" class="btn btn-xs btn-primary">📚 Serien</button>
-                                <button type="button" id="btn-modal-abs-tab-items" class="btn btn-xs btn-secondary">🎧 Hörbücher</button>
+                                <button type="button" id="btn-modal-abs-tab-series" class="btn btn-xs btn-primary">{{ t("abs_tab_series") }}</button>
+                                <button type="button" id="btn-modal-abs-tab-items" class="btn btn-xs btn-secondary">{{ t("abs_tab_items") }}</button>
+                                <button type="button" id="btn-modal-abs-tab-podcasts" class="btn btn-xs btn-secondary">{{ t("abs_tab_podcasts") }}</button>
                             </div>
-                            <button type="button" id="btn-close-modal-abs-picker" class="btn btn-xs btn-outline-secondary">✕ Schließen</button>
+                            <button type="button" id="btn-close-modal-abs-picker" class="btn btn-xs btn-outline-secondary">✕ {{ t("btn_close") }}</button>
                         </div>
                         <div class="search-box w-100 my-2">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                            <input type="text" id="modal-abs-search-input" placeholder="Audiobookshelf durchsuchen (z.B. Drei ???, Harry Potter)...">
+                            <input type="text" id="modal-abs-search-input" placeholder="{{ t('abs_search_placeholder') }}">
                         </div>
                         <div id="modal-abs-results-list" class="abs-modal-results">
-                            <p class="text-muted text-center py-2 text-xs">Lade Bibliotheken...</p>
+                            <p class="text-muted text-center py-2 text-xs">{{ t("abs_loading") }}</p>
                         </div>
                     </div>
 
-                    <div class="form-group">
+                    <!-- Status: Immer von vorne starten (nur für Hörbücher und Serien) -->
+                    <div class="form-group hidden" id="group-start-from-beginning">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="tag-start-from-beginning">
+                            <span>{{ t("modal_start_from_beginning") }}</span>
+                        </label>
+                    </div>
+
+                    <!-- Zufallswiedergabe (nur für Musik-Album, Playlist, Custom) -->
+                    <div class="form-group" id="group-random">
                         <label class="checkbox-label">
                             <input type="checkbox" id="tag-random">
-                            <span>Zufallswiedergabe (Random / Shuffle)</span>
+                            <span>{{ t("modal_random") }}</span>
                         </label>
                     </div>
 
                     <div class="form-group">
-                        <label for="tag-extra-params">Zusatz-Parameter (JSON)</label>
+                        <label for="tag-extra-params">{{ t("modal_extra_params") }}</label>
                         <textarea id="tag-extra-params" class="form-textarea font-mono" rows="2" placeholder='{"brightness": 200, "color_name": "blue"}'></textarea>
                     </div>
                 </div>
 
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-close-modal>Abbrechen</button>
-                    <button type="submit" class="btn btn-primary">Speichern</button>
+                    <button type="button" class="btn btn-secondary" data-close-modal>{{ t("btn_cancel") }}</button>
+                    <button type="submit" class="btn btn-primary">{{ t("btn_save") }}</button>
                 </div>
             </form>
         </div>
@@ -559,46 +572,46 @@
         <div class="modal-backdrop"></div>
         <div class="modal-dialog">
             <div class="modal-header">
-                <h3 id="reader-modal-title">Reader konfigurieren</h3>
+                <h3 id="reader-modal-title">{{ t("modal_reader_title_new") }}</h3>
                 <button class="modal-close" data-close-modal>&times;</button>
             </div>
             <form id="reader-form">
                 <div class="modal-body">
                     <div class="form-group">
-                        <label for="reader-id-input">Reader ID (ESPHome MQTT) <span class="required">*</span></label>
+                        <label for="reader-id-input">{{ t("modal_reader_id") }} <span class="required">*</span></label>
                         <input type="text" id="reader-id-input" class="form-input font-mono" placeholder="z. B. reader_kizi" required>
                     </div>
 
                     <div class="form-group">
-                        <label for="reader-target-player">Ziel-Player (Home Assistant) <span class="required">*</span></label>
+                        <label for="reader-target-player">{{ t("modal_reader_target_player") }} <span class="required">*</span></label>
                         <input type="text" id="reader-target-player" class="form-input font-mono" placeholder="z. B. media_player.kinderzimmer" required>
                     </div>
 
                     <div class="form-group">
                         <label for="reader-abs-token">
-                            Audiobookshelf User-Token (Optional)
-                            <small class="helper-text">Für nutzerspezifischen Hörfortschritt dieses Zimmers</small>
+                            {{ t("modal_reader_abs_token") }}
+                            <small class="helper-text">{{ t("modal_reader_abs_token_helper") }}</small>
                         </label>
                         <input type="password" id="reader-abs-token" class="form-input font-mono" placeholder="abs_user_token_hier">
                     </div>
 
                     <div class="form-group">
                         <label for="reader-abs-prefix">
-                            ABS Provider Prefix / MASS Instance ID (Optional)
-                            <small class="helper-text">z. B. <code>audiobookshelf--xPQT49LN</code> oder <code>xPQT49LN</code></small>
+                            {{ t("modal_reader_abs_prefix") }}
+                            <small class="helper-text">{{ t("modal_reader_abs_prefix_helper") }}</small>
                         </label>
                         <input type="text" id="reader-abs-prefix" class="form-input font-mono" placeholder="audiobookshelf--xPQT49LN">
                     </div>
 
                     <div class="form-group">
-                        <label for="reader-notes">Notizen / Raum</label>
-                        <input type="text" id="reader-notes" class="form-input" placeholder="z. B. Kinderzimmer Levi (Regal)">
+                        <label for="reader-notes">{{ t("modal_reader_notes") }}</label>
+                        <input type="text" id="reader-notes" class="form-input" placeholder="z. B. Kinderzimmer">
                     </div>
                 </div>
 
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-close-modal>Abbrechen</button>
-                    <button type="submit" class="btn btn-primary">Speichern</button>
+                    <button type="button" class="btn btn-secondary" data-close-modal>{{ t("btn_cancel") }}</button>
+                    <button type="submit" class="btn btn-primary">{{ t("btn_save") }}</button>
                 </div>
             </form>
         </div>
@@ -611,15 +624,15 @@
         <div class="modal-backdrop"></div>
         <div class="modal-dialog">
             <div class="modal-header">
-                <h3>MQTT Payload Inspector</h3>
+                <h3>{{ t("payload_inspector_title") }}</h3>
                 <button class="modal-close" data-close-modal>&times;</button>
             </div>
             <div class="modal-body">
                 <pre id="payload-modal-content" class="code-block" style="max-height: 400px;"></pre>
             </div>
             <div class="modal-footer">
-                <button type="button" id="btn-copy-payload-modal" class="btn btn-primary">📋 Kopieren</button>
-                <button type="button" class="btn btn-secondary" data-close-modal>Schließen</button>
+                <button type="button" id="btn-copy-payload-modal" class="btn btn-primary">📋 {{ t("copied_to_clipboard") }}</button>
+                <button type="button" class="btn btn-secondary" data-close-modal>{{ t("btn_close") }}</button>
             </div>
         </div>
     </div>
@@ -631,26 +644,30 @@
         <div class="modal-backdrop"></div>
         <div class="modal-dialog modal-lg" style="max-width: 900px; width: 95%;">
             <div class="modal-header">
-                <h3>📋 System & Container Live-Logs</h3>
+                <h3>{{ t("logs_modal_title") }}</h3>
                 <button class="modal-close" data-close-modal>&times;</button>
             </div>
             <div class="modal-body">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                    <span class="text-xs text-muted">Letzte 250 Logzeilen aus dem Server-Arbeitsspeicher:</span>
+                    <span class="text-xs text-muted">{{ t("logs_modal_desc") }}</span>
                     <div style="display: flex; gap: 8px;">
-                        <button type="button" id="btn-refresh-logs" class="btn btn-xs btn-secondary">🔄 Aktualisieren</button>
-                        <button type="button" id="btn-copy-logs" class="btn btn-xs btn-primary">📋 Logs kopieren</button>
+                        <button type="button" id="btn-refresh-logs" class="btn btn-xs btn-secondary">{{ t("btn_refresh_logs") }}</button>
+                        <button type="button" id="btn-copy-logs" class="btn btn-xs btn-primary">{{ t("btn_copy_logs") }}</button>
                     </div>
                 </div>
                 <pre id="system-logs-content" class="code-block" style="max-height: 480px; overflow-y: auto; font-size: 11px; white-space: pre-wrap; line-height: 1.4;"></pre>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-close-modal>Schließen</button>
+                <button type="button" class="btn btn-secondary" data-close-modal>{{ t("btn_close") }}</button>
             </div>
         </div>
     </div>
 
     <!-- Scripts -->
+    <script>
+        window.APP_LANG = "{{ lang }}";
+        window.I18N = {{ i18n | tojson }};
+    </script>
     <script src="/static/js/app.js"></script>
 </body>
 </html>

@@ -36,6 +36,7 @@ class ServerConfig(BaseModel):
     host: str = Field(default="0.0.0.0")
     port: int = Field(default=5000)
     log_level: str = Field(default="INFO")
+    language: str = Field(default="en")  # "en" (default) or "de"
 
 
 class AppConfig(BaseModel):
@@ -81,10 +82,10 @@ def get_default_db_path() -> str:
     return str(local_data_dir / "database.db")
 
 
-def load_config() -> AppConfig:
+def load_config(config_path: Optional[str] = None) -> AppConfig:
     """Lädt die Konfiguration aus YAML und wendet Umgebungsvariablen-Overrides an."""
     config_dict = {}
-    config_file = find_config_file()
+    config_file = config_path if config_path else find_config_file()
 
     if config_file:
         try:
@@ -155,5 +156,16 @@ def load_config() -> AppConfig:
             pass
     if os.getenv("LOG_LEVEL"):
         config.server.log_level = os.getenv("LOG_LEVEL")
+
+    lang_override = (
+        os.getenv("UI_LANGUAGE")
+        or os.getenv("SERVER_LANGUAGE")
+        or os.getenv("APP_LANGUAGE")
+        or os.getenv("LANGUAGE")
+    )
+    if lang_override:
+        config.server.language = lang_override.strip().lower()
+    elif "language" in config_dict:
+        config.server.language = str(config_dict["language"]).strip().lower()
 
     return config

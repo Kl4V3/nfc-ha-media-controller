@@ -585,3 +585,172 @@ class AudiobookshelfClient:
                 if self.reset_item_progress(book_id, user_token=user_token):
                     reset_count += 1
         logger.info(f"Serienfortschritt in ABS zurückgesetzt ({reset_count}/{len(books)} Bücher aktualisiert).")
+
+    def get_podcast_list(self, library_id: Optional[str] = None, user_token: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Gibt Podcasts aus einer oder allen Bibliotheken zurück."""
+        podcasts = []
+        try:
+            libraries = self.get_libraries(user_token)
+            if library_id:
+                target_libs = [library_id]
+            else:
+                podcast_libs = [lib["id"] for lib in libraries if str(lib.get("mediaType", "")).lower() == "podcast"]
+                target_libs = podcast_libs if podcast_libs else [lib["id"] for lib in libraries]
+
+            for lib_id in target_libs:
+                url = f"{self.base_url}/api/libraries/{lib_id}/items?limit=100"
+                resp = requests.get(url, headers=self._get_headers(user_token), timeout=self.timeout)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    raw_items = data.get("results", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+                    for item in raw_items:
+                        is_podcast = item.get("mediaType") == "podcast" or (isinstance(item.get("media"), dict) and item.get("media", {}).get("episodes") is not None)
+                        if is_podcast or not library_id:
+                            meta = item.get("media", {}).get("metadata", {}) if isinstance(item.get("media"), dict) else {}
+                            title = meta.get("title") or item.get("name") or "Unbekannter Podcast"
+                            author = meta.get("author") or meta.get("authorName") or meta.get("artist") or ""
+                            episodes = item.get("media", {}).get("episodes", []) if isinstance(item.get("media"), dict) else []
+                            num_episodes = item.get("numEpisodes") or item.get("media", {}).get("numEpisodes") or len(episodes)
+                            podcasts.append({
+                                "id": item.get("id"),
+                                "title": title,
+                                "name": title,
+                                "author": author,
+                                "library_id": lib_id,
+                                "num_episodes": num_episodes
+                            })
+        except Exception as e:
+            logger.warning(f"Konnte ABS-Podcasts nicht abrufen: {e}")
+        return podcasts
+
+    def search_podcasts(self, query: str, library_id: Optional[str] = None, user_token: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Durchsucht Bibliotheken nach Podcasts."""
+        if not query or not query.strip():
+            return self.get_podcast_list(library_id=library_id, user_token=user_token)
+
+        q_clean = query.strip().lower()
+        all_podcasts = self.get_podcast_list(library_id=library_id, user_token=user_token)
+        return [
+            p for p in all_podcasts
+            if q_clean in (p.get("title") or "").lower()
+            or q_clean in (p.get("author") or "").lower()
+            or q_clean in (p.get("id") or "").lower()
+        ]
+
+    def get_podcast_details(self, podcast_id: str, library_id: Optional[str] = None, user_token: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Ruft Details eines Podcasts ab (inkl. Episodenliste)."""
+        item = self.get_item_details(podcast_id, user_token=user_token)
+        if item:
+            return item
+
+        url = f"{self.base_url}/api/podcasts/{podcast_id}"
+        try:
+            resp = requests.get(url, headers=self._get_headers(user_token), timeout=self.timeout)
+            if resp.status_code == 200:
+                data = resp.json()
+                return data.get("podcast") or data
+        except Exception as e:
+            logger.debug(f"Fallback /api/podcasts/{podcast_id} fehlgeschlagen: {e}")
+
+        return None
+
+    def resolve_latest_podcast_episode(self, podcast_id: str, library_id: Optional[str] = None, user_token: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """
+        Ermittelt die aktuellste Folge eines Podcasts, die noch nicht vollständig gehört wurde:
+        1. Ruft Podcast-Details und Episodenliste ab.
+        2. Sortiert Episoden absteigend nach Veröffentlichungsdatum (neueste zuerst).
+        3. Gleicht den Nutzer-Hörfortschritt ab.
+        4. Wählt die neueste Folge, die noch nicht 'isFinished' ist.
+        5. Wenn alle fertig sind: Wählt die neueste Folge.
+        """
+        import email.utils
+        from datetime import datetime
+
+        podcast_data = self.get_podcast_details(podcast_id, library_id=library_id, user_token=user_token)
+        if not podcast_data:
+            logger.warning(f"ABS-Podcast '{podcast_id}' konnte nicht gefunden werden.")
+            return None
+
+        media = podcast_data.get("media", {}) if isinstance(podcast_data.get("media"), dict) else {}
+        meta = media.get("metadata", {}) if isinstance(media.get("metadata"), dict) else {}
+        podcast_title = meta.get("title") or podcast_data.get("name") or podcast_data.get("title") or "Podcast"
+
+        episodes = media.get("episodes") or podcast_data.get("episodes") or []
+        if not episodes:
+            logger.warning(f"Keine Episoden in ABS-Podcast '{podcast_title}' ({podcast_id}) gefunden.")
+            return None
+
+        def _get_pub_timestamp(ep: Dict[str, Any]) -> float:
+            pub_at = ep.get("publishedAt")
+            if pub_at is not None:
+                try:
+                    val = float(pub_at)
+                    return val / 1000.0 if val > 1e11 else val
+                except (ValueError, TypeError):
+                    pass
+            pub_date = ep.get("pubDate")
+            if pub_date:
+                try:
+                    dt = email.utils.parsedate_to_datetime(str(pub_date))
+                    return dt.timestamp()
+                except Exception:
+                    pass
+                try:
+                    dt = datetime.fromisoformat(str(pub_date).replace("Z", "+00:00"))
+                    return dt.timestamp()
+                except Exception:
+                    pass
+            for k in ["episode", "season"]:
+                if ep.get(k) is not None:
+                    try:
+                        return float(ep[k])
+                    except (ValueError, TypeError):
+                        pass
+            return 0.0
+
+        sorted_episodes = sorted(episodes, key=_get_pub_timestamp, reverse=True)
+        progress_map = self.get_user_progress(user_token)
+        logger.info(f"--- Prüfe Fortschritt für Podcast '{podcast_title}' ({len(sorted_episodes)} Folgen) ---")
+
+        selected_episode = None
+        for idx, ep in enumerate(sorted_episodes):
+            ep_id = str(ep.get("id") or "")
+            ep_title = ep.get("title") or f"Folge {len(sorted_episodes) - idx}"
+            prog = progress_map.get(ep_id)
+
+            if not prog:
+                selected_episode = ep
+                logger.info(f"-> Auswahl (Neueste Folge nie gehört): '{ep_title}' (ID: {ep_id})")
+                break
+
+            raw_is_fin = prog.get("isFinished")
+            is_finished = str(raw_is_fin).lower() in ["true", "1"]
+            raw_prog = float(prog.get("progress") or 0)
+            progress_ratio = (raw_prog / 100.0) if raw_prog > 1.0 else raw_prog
+            current_time = float(prog.get("currentTime") or 0)
+            duration = float(prog.get("duration") or 0)
+            time_ratio = (current_time / duration) if duration > 0 else 0.0
+
+            is_done = is_finished or progress_ratio >= 0.98 or time_ratio >= 0.98
+            if is_done:
+                continue
+
+            selected_episode = ep
+            logger.info(f"-> Auswahl (Neueste unvollendete Folge bei {progress_ratio:.1%}): '{ep_title}' (ID: {ep_id})")
+            break
+
+        if not selected_episode:
+            selected_episode = sorted_episodes[0]
+            logger.info(f"-> Alle Folgen bereits beendet. Starte neueste Folge: '{selected_episode.get('title')}'")
+
+        ep_id = str(selected_episode.get("id") or "")
+        ep_title = selected_episode.get("title") or "Episode"
+
+        return {
+            "podcast_id": podcast_id,
+            "podcast_title": podcast_title,
+            "episode_id": ep_id,
+            "episode_title": ep_title,
+            "pub_date": selected_episode.get("pubDate") or selected_episode.get("publishedAt"),
+            "total_episodes": len(sorted_episodes)
+        }

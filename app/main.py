@@ -16,6 +16,7 @@ from app.audiobookshelf import AudiobookshelfClient
 from app.mqtt_client import MQTTService
 from app.routes.api import api_router
 from app.routes.ws import ws_router, ws_manager
+from app.i18n import get_translations
 from collections import deque
 
 class MemoryLogHandler(logging.Handler):
@@ -136,12 +137,17 @@ async def favicon():
 async def serve_index(request: Request):
     """Liefert das Haupt-Dashboard / Frontend aus."""
     config: AppConfig = request.app.state.config
+    lang = getattr(config.server, "language", "en").lower()
+    i18n_dict = get_translations(lang)
     return templates.TemplateResponse(
         request=request,
         name="index.html",
         context={
             "config": config,
-            "version": __version__
+            "version": __version__,
+            "lang": lang,
+            "t": lambda k, default="": i18n_dict.get(k, default or k),
+            "i18n": i18n_dict
         }
     )
 

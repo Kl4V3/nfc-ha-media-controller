@@ -62,16 +62,20 @@ A modular, event-driven middleware to control multi-room audio (**Music Assistan
 - **Toniebox Presence Detection:**
   - **Tag Placed (`scanned`):** Immediately plays the assigned audiobook, series, or playlist on the room speaker.
   - **Tag Removed (`removed`):** Instantly sends a stop command (`media_player.media_stop`) to the designated player.
-- **Audiobookshelf Integration with Series Progress:**
-  - Automatically resolves the **next unfinished book** in a series for the respective user.
+- **Audiobookshelf & Podcast Integration with Progress Tracking:**
+  - Automatically resolves the **next unfinished book** in a series or the **latest unfinished episode** of a podcast.
+  - **Always Start from Beginning:** Option for audiobooks and series to start from 0:00 every time while retaining next-book series search logic.
+  - **Podcast Support:** Works with both Audiobookshelf podcast feeds and Music Assistant library (`library://podcast/<id>`).
   - **Multi-User Support:** Assign distinct ABS user tokens to each reader/room to track listening progress independently.
   - **Fault Tolerant:** Enforced 3-second timeout prevents thread blocking if the ABS server is offline.
 - **Auto-Discovery & Safe Fallback:**
   - Unknown tags are automatically registered in the SQLite database upon first scan.
   - Unconfigured tags trigger a configurable **warning sound** immediately instead of causing playback errors.
 - **Modern Responsive Web Dashboard (Port 5000):**
-  - Manage tags, aliases, volumes, shuffle mode, and room reader assignments.
-  - Integrated **ABS Series Explorer** (1-click series ID selection).
+  - Default **English interface** with optional German (`language: "de"` or `UI_LANGUAGE=de`).
+  - Manage tags, aliases, volumes, playback modes, and room reader assignments.
+  - Context-aware controls: Shuffle only available where appropriate (Music Albums/Playlists), hidden for audiobooks, series, lights, scenes, and podcasts.
+  - Integrated **ABS Series & Podcast Explorer** (1-click ID selection).
   - **Real-Time Live Feed** via WebSockets for instant scan visual feedback.
   - **Interactive Hardware Simulator** to test tags and events without physical hardware.
 
@@ -140,6 +144,7 @@ All settings can be configured via **Docker Compose environment variables** or b
 | `DEFAULT_VOLUME` | Default playback volume percentage | `20` |
 | `INTEGRATION_MODE` | `mass` (Music Assistant) or `media_player` | `mass` |
 | `SERVER_PORT` | Web UI Port | `5000` |
+| `LANGUAGE` / `UI_LANGUAGE` | Dashboard UI language (`en` or `de`) | `en` (default) |
 | `LOG_LEVEL` | Log level verbosity | `INFO` (`DEBUG`, `WARNING`) |
 
 ---
