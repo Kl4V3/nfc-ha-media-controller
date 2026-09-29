@@ -22,6 +22,20 @@ class AudiobookshelfClient:
             headers["Authorization"] = f"Bearer {token.strip()}"
         return headers
 
+    def _is_item_finished(self, progress: Optional[Dict[str, Any]]) -> bool:
+        """Determines whether a media item/episode is considered finished (isFinished == True or progress >= 0.95)."""
+        if not progress or not isinstance(progress, dict):
+            return False
+        raw_is_fin = progress.get("isFinished")
+        if str(raw_is_fin).lower() in ["true", "1"]:
+            return True
+        raw_prog = float(progress.get("progress") or 0)
+        progress_ratio = (raw_prog / 100.0) if raw_prog > 1.0 else raw_prog
+        c_time = float(progress.get("currentTime") or 0)
+        dur = float(progress.get("duration") or 0)
+        time_ratio = (c_time / dur) if dur > 0 else 0.0
+        return progress_ratio >= 0.95 or time_ratio >= 0.95
+
     def test_connection(self, user_token: Optional[str] = None) -> Dict[str, Any]:
         """Prüft die Verbindung zum Audiobookshelf-Server und validiert das Token."""
         url = f"{self.base_url}/api/me"
@@ -351,7 +365,7 @@ class AudiobookshelfClient:
                         or []
                     )
                 for prog in prog_list:
-                    for key in ["libraryItemId", "id", "mediaItemId"]:
+                    for key in ["libraryItemId", "id", "mediaItemId", "episodeId"]:
                         val = prog.get(key)
                         if val:
                             progress_map[str(val)] = prog
@@ -478,18 +492,52 @@ class AudiobookshelfClient:
                 raw_is_fin = prog.get("isFinished")
                 is_fin_flag = str(raw_is_fin).lower() in ["true", "1"]
                 raw_prog = float(prog.get("progress") or 0)
-                # Normalisiere Fortschritt falls ABS Prozentwerte (0-100) statt (0-1) sendet
+                # Normalize progress if ABS sends percentages (0-100) instead of (0-1)
                 p_ratio = (raw_prog / 100.0) if raw_prog > 1.0 else raw_prog
                 c_time = float(prog.get("currentTime") or 0)
                 dur = float(prog.get("duration") or 0)
                 time_ratio = (c_time / dur) if dur > 0 else 0.0
 
-                is_done = is_fin_flag or p_ratio >= 0.98 or time_ratio >= 0.98
-                logger.info(f"  [{idx+1}] Folge {seq_display}: '{b_title}' -> {'BEENDET' if is_done else 'IN ARBEIT'} (isFinished={is_fin_flag}, prog={p_ratio:.1%}, time={c_time:.0f}/{dur:.0f}s)")
+                is_done = is_fin_flag or p_ratio >= 0.95 or time_ratio >= 0.95
+                logger.info(f"  [{idx+1}] Episode {seq_display}: '{b_title}' -> {'FINISHED' if is_done else 'IN PROGRESS'} (isFinished={is_fin_flag}, prog={p_ratio:.1%}, time={c_time:.0f}/{dur:.0f}s)")
             else:
-                logger.info(f"  [{idx+1}] Folge {seq_display}: '{b_title}' -> UNGEHÖRT (0%)")
+                logger.info(f"  [{idx+1}] Episode {seq_display}: '{b_title}' -> UNPLAYED (0%)")
 
-        # Erstes unfertiges Buch suchen
+        # Active cleanup: Check the last played book in the series before calculating the next book
+        last_played_candidate = None
+        last_played_ts = -1.0
+        for b in sorted_books:
+            b_id = str(b.get("id") or b.get("libraryItemId") or "")
+            m_id = str(b.get("media", {}).get("id") or "") if isinstance(b.get("media"), dict) else ""
+            prog = progress_map.get(b_id) or (progress_map.get(m_id) if m_id else None)
+            if prog:
+                ts = float(prog.get("lastUpdate") or prog.get("updatedAt") or 0)
+                if ts > 0:
+                    if ts > last_played_ts:
+                        last_played_ts = ts
+                        last_played_candidate = (b, prog)
+                else:
+                    last_played_candidate = (b, prog)
+
+        if last_played_candidate:
+            cand_b, cand_prog = last_played_candidate
+            raw_is_fin = cand_prog.get("isFinished")
+            is_fin = str(raw_is_fin).lower() in ["true", "1"]
+            raw_p = float(cand_prog.get("progress") or 0)
+            p_ratio = (raw_p / 100.0) if raw_p > 1.0 else raw_p
+            c_time = float(cand_prog.get("currentTime") or 0)
+            dur = float(cand_prog.get("duration") or 0)
+            t_ratio = (c_time / dur) if dur > 0 else 0.0
+
+            if not is_fin and (p_ratio >= 0.95 or t_ratio >= 0.95):
+                cand_id = cand_prog.get("libraryItemId") or cand_prog.get("id") or cand_b.get("id") or cand_b.get("libraryItemId")
+                cand_title = cand_b.get("media", {}).get("metadata", {}).get("title") or cand_b.get("title") or cand_b.get("name") or cand_id
+                logger.info(f"Active cleanup: Last played book '{cand_title}' ({cand_id}) has progress >= 0.95 ({max(p_ratio, t_ratio):.1%}) but isFinished is False. Marking as finished via ABS API...")
+                self.mark_as_finished(str(cand_id), user_token=user_token)
+                cand_prog["isFinished"] = True
+                cand_prog["progress"] = 1.0
+
+        # Find first unfinished book
         selected_book = None
         for b in sorted_books:
             book_id = str(b.get("id") or b.get("libraryItemId") or "")
@@ -499,9 +547,9 @@ class AudiobookshelfClient:
             prog = progress_map.get(book_id) or (progress_map.get(media_id) if media_id else None)
 
             if not prog:
-                # Noch nie gehört -> erstes ungespieltes Buch
+                # Never played -> first unplayed book
                 selected_book = b
-                logger.info(f"-> Auswahl: Folge {b.get('sequence', '?')} ('{b_title}') [Noch nie gehört]")
+                logger.info(f"-> Selection: Episode {b.get('sequence', '?')} ('{b_title}') [Never played]")
                 break
 
             raw_is_fin = prog.get("isFinished")
@@ -512,12 +560,12 @@ class AudiobookshelfClient:
             duration = float(prog.get("duration") or 0)
             time_ratio = (current_time / duration) if duration > 0 else 0.0
 
-            # Buch gilt als beendet wenn isFinished == True oder Fortschritt >= 98%
-            if is_finished or progress_ratio >= 0.98 or time_ratio >= 0.98:
+            # Book is considered finished if isFinished == True or progress >= 95%
+            if is_finished or progress_ratio >= 0.95 or time_ratio >= 0.95:
                 continue
 
             selected_book = b
-            logger.info(f"-> Auswahl: Folge {b.get('sequence', '?')} ('{b_title}') [Unvollendet bei {progress_ratio:.1%}]")
+            logger.info(f"-> Selection: Episode {b.get('sequence', '?')} ('{b_title}') [Unfinished at {progress_ratio:.1%}]")
             break
 
         # Falls alle Bücher bereits gehört wurden, starte wieder mit dem ersten und setze Serie zurück
@@ -539,6 +587,26 @@ class AudiobookshelfClient:
             "sequence": selected_book.get("sequence"),
             "total_books": len(sorted_books)
         }
+
+    def mark_as_finished(self, item_id: str, user_token: Optional[str] = None) -> bool:
+        """
+        Marks an item/book as finished in Audiobookshelf.
+        API Call: PATCH /api/me/progress/{id} with payload {"isFinished": True}.
+        """
+        url = f"{self.base_url}/api/me/progress/{item_id}"
+        headers = self._get_headers(user_token)
+        payload = {"isFinished": True}
+        try:
+            resp = requests.patch(url, headers=headers, json=payload, timeout=self.timeout)
+            if resp.status_code in [200, 204]:
+                logger.info(f"Successfully marked '{item_id}' as finished in ABS.")
+                return True
+            else:
+                logger.warning(f"Failed to mark '{item_id}' as finished in ABS: HTTP {resp.status_code} {resp.text[:100]}")
+                return False
+        except Exception as e:
+            logger.warning(f"Error marking '{item_id}' as finished in ABS: {e}")
+            return False
 
     def reset_item_progress(self, item_id: str, user_token: Optional[str] = None) -> bool:
         """
@@ -696,7 +764,7 @@ class AudiobookshelfClient:
                     return val / 1000.0 if val > 1e11 else val
                 except (ValueError, TypeError):
                     pass
-            pub_date = ep.get("pubDate")
+            pub_date = ep.get("pubDate") or ep.get("publishedDate") or ep.get("date")
             if pub_date:
                 try:
                     dt = email.utils.parsedate_to_datetime(str(pub_date))
@@ -708,7 +776,13 @@ class AudiobookshelfClient:
                     return dt.timestamp()
                 except Exception:
                     pass
-            for k in ["episode", "season"]:
+                for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y"):
+                    try:
+                        dt = datetime.strptime(str(pub_date).strip(), fmt)
+                        return dt.timestamp()
+                    except Exception:
+                        pass
+            for k in ["index", "episode", "season"]:
                 if ep.get(k) is not None:
                     try:
                         return float(ep[k])
@@ -719,6 +793,39 @@ class AudiobookshelfClient:
         sorted_episodes = sorted(episodes, key=_get_pub_timestamp, reverse=True)
         progress_map = self.get_user_progress(user_token)
         logger.info(f"--- Prüfe Fortschritt für Podcast '{podcast_title}' ({len(sorted_episodes)} Folgen) ---")
+
+        # Active cleanup: Check if the last played episode in this podcast has progress >= 0.95 and isFinished is False
+        last_played_candidate = None
+        last_played_ts = -1.0
+        for ep in sorted_episodes:
+            ep_id = str(ep.get("id") or "")
+            prog = progress_map.get(ep_id)
+            if prog:
+                ts = float(prog.get("lastUpdate") or prog.get("updatedAt") or 0)
+                if ts > 0:
+                    if ts > last_played_ts:
+                        last_played_ts = ts
+                        last_played_candidate = (ep, prog)
+                else:
+                    last_played_candidate = (ep, prog)
+
+        if last_played_candidate:
+            cand_ep, cand_prog = last_played_candidate
+            raw_is_fin = cand_prog.get("isFinished")
+            is_fin = str(raw_is_fin).lower() in ["true", "1"]
+            raw_p = float(cand_prog.get("progress") or 0)
+            p_ratio = (raw_p / 100.0) if raw_p > 1.0 else raw_p
+            c_time = float(cand_prog.get("currentTime") or 0)
+            dur = float(cand_prog.get("duration") or 0)
+            t_ratio = (c_time / dur) if dur > 0 else 0.0
+
+            if not is_fin and (p_ratio >= 0.95 or t_ratio >= 0.95):
+                cand_id = cand_ep.get("id") or cand_prog.get("episodeId") or cand_prog.get("id")
+                cand_title = cand_ep.get("title") or cand_id
+                logger.info(f"Active cleanup: Last played podcast episode '{cand_title}' ({cand_id}) has progress >= 0.95 ({max(p_ratio, t_ratio):.1%}) but isFinished is False. Marking as finished via ABS API...")
+                self.mark_as_finished(str(cand_id), user_token=user_token)
+                cand_prog["isFinished"] = True
+                cand_prog["progress"] = 1.0
 
         selected_episode = None
         for idx, ep in enumerate(sorted_episodes):
@@ -731,18 +838,11 @@ class AudiobookshelfClient:
                 logger.info(f"-> Auswahl (Neueste Folge nie gehört): '{ep_title}' (ID: {ep_id})")
                 break
 
-            raw_is_fin = prog.get("isFinished")
-            is_finished = str(raw_is_fin).lower() in ["true", "1"]
-            raw_prog = float(prog.get("progress") or 0)
-            progress_ratio = (raw_prog / 100.0) if raw_prog > 1.0 else raw_prog
-            current_time = float(prog.get("currentTime") or 0)
-            duration = float(prog.get("duration") or 0)
-            time_ratio = (current_time / duration) if duration > 0 else 0.0
-
-            is_done = is_finished or progress_ratio >= 0.98 or time_ratio >= 0.98
-            if is_done:
+            if self._is_item_finished(prog):
                 continue
 
+            raw_prog = float(prog.get("progress") or 0)
+            progress_ratio = (raw_prog / 100.0) if raw_prog > 1.0 else raw_prog
             selected_episode = ep
             logger.info(f"-> Auswahl (Neueste unvollendete Folge bei {progress_ratio:.1%}): '{ep_title}' (ID: {ep_id})")
             break

@@ -13,6 +13,8 @@ from app.database import (
     get_tag_by_id,
     upsert_tag,
     delete_tag,
+    delete_unconfigured_tags,
+    sanitize_tag_id,
     get_all_readers,
     get_reader_by_id,
     upsert_reader,
@@ -65,10 +67,19 @@ def list_tags(request: Request):
     return get_all_tags(config.database_path)
 
 
+@api_router.delete("/tags/unconfigured")
+def remove_unconfigured_tags(request: Request):
+    """Deletes all tag records lacking a valid target or action."""
+    config: AppConfig = request.app.state.config
+    deleted_count = delete_unconfigured_tags(config.database_path)
+    return {"success": True, "status": "success", "deleted_count": deleted_count}
+
+
 @api_router.get("/tags/{tag_id}", response_model=Dict[str, Any])
 def get_tag(tag_id: str, request: Request):
     config: AppConfig = request.app.state.config
-    tag = get_tag_by_id(config.database_path, tag_id)
+    clean_id = sanitize_tag_id(tag_id)
+    tag = get_tag_by_id(config.database_path, clean_id)
     if not tag:
         raise HTTPException(status_code=404, detail="Tag not found")
     return tag
@@ -79,8 +90,8 @@ def get_tag(tag_id: str, request: Request):
 def save_tag(tag_data: TagModel, request: Request, tag_id: Optional[str] = None):
     config: AppConfig = request.app.state.config
     data = tag_data.model_dump()
-    if tag_id:
-        data["tag_id"] = tag_id
+    final_id = sanitize_tag_id(tag_id or data.get("tag_id", ""))
+    data["tag_id"] = final_id
     saved = upsert_tag(config.database_path, data)
     return saved
 
@@ -88,10 +99,11 @@ def save_tag(tag_data: TagModel, request: Request, tag_id: Optional[str] = None)
 @api_router.delete("/tags/{tag_id}")
 def remove_tag(tag_id: str, request: Request):
     config: AppConfig = request.app.state.config
-    success = delete_tag(config.database_path, tag_id)
+    clean_id = sanitize_tag_id(tag_id)
+    success = delete_tag(config.database_path, clean_id)
     if not success:
         raise HTTPException(status_code=404, detail="Tag not found")
-    return {"success": True, "message": f"Tag {tag_id} deleted"}
+    return {"success": True, "message": f"Tag {clean_id} deleted"}
 
 
 # ==============================================================================
@@ -385,6 +397,38 @@ FIRMWARE_TEMPLATES = {
             {"color": "#ef4444", "name": "Rot", "state": "Verbindungsfehler (WLAN/MQTT getrennt)"}
         ]
     },
+    "m5atom_lite_rfid_native": {
+        "id": "m5atom_lite_rfid_native",
+        "name": "⭐ M5Stack ATOM Lite + RFID 2 Unit (Grove I2C - Custom Firmware)",
+        "recommended": True,
+        "filename": "config.h",
+        "framework": "platformio",
+        "description": "Dedicated custom C++ firmware for M5Stack ATOM Lite & RFID 2 Unit (Grove I2C) with web dashboard, hardware debouncing, and RGB status LED.",
+        "features": [
+            "Native Non-Blocking RFID Scan-Engine (WUPA & REQA)",
+            "Hardware Debouncing (reliable tag presence without jitter)",
+            "Integrated Web Diagnostic Dashboard (Port 80) with live log terminal",
+            "RGB NeoPixel Status Indication (Green/Blue/Cyan/Orange/Red)",
+            "Hardware Button for Status Ping & Restart",
+            "PlatformIO C++ Firmware (in firmware/m5atom_lite_rfid)"
+        ],
+        "pinout": [
+            {"pin": "Grove Gelb", "signal": "I2C SDA", "gpio": "GPIO 26"},
+            {"pin": "Grove Weiß", "signal": "I2C SCL", "gpio": "GPIO 32"},
+            {"pin": "Grove Rot", "signal": "Power (5V)", "gpio": "5V"},
+            {"pin": "Grove Schwarz", "signal": "GND", "gpio": "GND"},
+            {"pin": "Status LED", "signal": "WS2812 RGB", "gpio": "GPIO 27"},
+            {"pin": "Front Button", "signal": "Push Button", "gpio": "GPIO 39"}
+        ],
+        "led_states": [
+            {"color": "#10b981", "name": "Grün", "state": "Bereit & Verbunden (Normalbetrieb)"},
+            {"color": "#3b82f6", "name": "Blau", "state": "WLAN-Verbindungsaufbau"},
+            {"color": "#f97316", "name": "Orange", "state": "WLAN verbunden, warte auf MQTT"},
+            {"color": "#06b6d4", "name": "Cyan", "state": "Tag erkannt (Play-Befehl gesendet)"},
+            {"color": "#fb923c", "name": "Hellorange", "state": "Tag entfernt (Stop-Befehl gesendet)"},
+            {"color": "#ef4444", "name": "Rot", "state": "WLAN getrennt / Fehler"}
+        ]
+    },
     "esp32_pn532_i2c": {
         "id": "esp32_pn532_i2c",
         "name": "ESP32 NodeMCU + PN532 NFC (I2C)",
@@ -434,6 +478,9 @@ FIRMWARE_TEMPLATES = {
 def find_template_file(filename: str) -> Optional[Path]:
     """Sucht nach einer ESPHome oder Firmware Template-Datei in den typischen Pfaden."""
     search_dirs = [
+        Path("/app/firmware/m5atom_lite_rfid/include"),
+        Path("./firmware/m5atom_lite_rfid/include"),
+        Path(__file__).parent.parent.parent / "firmware" / "m5atom_lite_rfid" / "include",
         Path("/app/firmware/esp32_pn5180/include"),
         Path("./firmware/esp32_pn5180/include"),
         Path(__file__).parent.parent.parent / "firmware" / "esp32_pn5180" / "include",
@@ -594,6 +641,80 @@ const size_t NUM_KNOWN_KEYS = sizeof(KNOWN_PRIVACY_KEYS) / sizeof(KNOWN_PRIVACY_
             "substitutions": subs
         }
 
+    # Spezialfall: PlatformIO Firmware für M5Stack ATOM Lite + RFID
+    if hardware_type == "m5atom_lite_rfid_native":
+        rendered_code = f"""#ifndef CONFIG_H
+#define CONFIG_H
+
+#include <Arduino.h>
+
+// ============================================================================
+// WI-FI CONFIGURATION
+// ============================================================================
+const char* WIFI_SSID       = "{final_wifi_ssid}";
+const char* WIFI_PASSWORD   = "{final_wifi_pass}";
+
+// ============================================================================
+// MQTT BROKER CONFIGURATION
+// ============================================================================
+const char* MQTT_BROKER     = "{final_mqtt_broker}";
+const int   MQTT_PORT       = {final_mqtt_port};
+const char* MQTT_USER       = "{final_mqtt_user}";
+const char* MQTT_PASSWORD   = "{final_mqtt_pass}";
+
+// MQTT Topics
+const char* MQTT_TOPIC_SCANNED = "rfid/scanned";
+const char* MQTT_TOPIC_STATUS  = "rfid/status";
+
+// ============================================================================
+// READER IDENTIFICATION
+// ============================================================================
+const char* READER_ID          = "{final_reader_id}";
+
+// ============================================================================
+// POLLING & DEBOUNCE SETTINGS
+// ============================================================================
+const unsigned long SCAN_INTERVAL_MS = 200;
+const int MAX_MISSING_CYCLES = 3; // 3 * 200ms = 600ms Debounce-Zeit gegen Wackler
+
+// ============================================================================
+// HARDWARE PIN ASSIGNMENTS (M5Stack ATOM Lite + Grove RFID)
+// ============================================================================
+#ifndef GROVE_SDA
+#define GROVE_SDA 26
+#endif
+
+#ifndef GROVE_SCL
+#define GROVE_SCL 32
+#endif
+
+#ifndef ATOM_LED_PIN
+#define ATOM_LED_PIN 27
+#endif
+
+#ifndef ATOM_BTN_PIN
+#define ATOM_BTN_PIN 39
+#endif
+
+const uint8_t MFRC522_I2C_ADDR = 0x28;
+
+#endif // CONFIG_H
+"""
+        filename = "config.h"
+        if download:
+            return PlainTextResponse(
+                rendered_code,
+                media_type="text/x-c",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+            )
+        return {
+            "yaml": rendered_code,
+            "filename": filename,
+            "hardware_type": hardware_type,
+            "reader_id": final_reader_id,
+            "substitutions": subs
+        }
+
     tmpl_info = FIRMWARE_TEMPLATES[hardware_type]
     tmpl_path = find_template_file(tmpl_info["filename"])
     if not tmpl_path:
@@ -623,7 +744,7 @@ const size_t NUM_KNOWN_KEYS = sizeof(KNOWN_PRIVACY_KEYS) / sizeof(KNOWN_PRIVACY_
 
 @api_router.get("/firmware/manifest/{hardware_type}")
 def get_firmware_manifest(hardware_type: str):
-    """Liefert ein ESP Web Tools Manifest für Browser-Flashen."""
+    """Returns an ESP Web Tools manifest for browser flashing."""
     if hardware_type not in FIRMWARE_TEMPLATES:
         raise HTTPException(status_code=400, detail=f"Unbekannter Hardware-Typ: {hardware_type}")
 
@@ -642,4 +763,23 @@ def get_firmware_manifest(hardware_type: str):
             }
         ]
     }
+
+
+@api_router.get("/firmware/download-bin/{hardware_type}")
+def download_firmware_bin(hardware_type: str):
+    """Downloads the compiled firmware binary if available."""
+    from fastapi.responses import FileResponse
+    bin_path = Path(__file__).parent.parent / "static" / "firmware" / hardware_type / "firmware.bin"
+    if not bin_path.is_file():
+        pio_path = Path(__file__).parent.parent.parent / "firmware" / "m5atom_lite_rfid" / ".pio" / "build" / "m5stack-atom" / "firmware.bin"
+        if pio_path.is_file() and hardware_type in ["m5atom_lite_rfid", "m5atom_lite_rfid_native"]:
+            bin_path = pio_path
+        else:
+            raise HTTPException(status_code=404, detail=f"Compiled firmware binary for {hardware_type} not found.")
+    return FileResponse(
+        path=str(bin_path),
+        media_type="application/octet-stream",
+        filename=f"{hardware_type}_firmware.bin"
+    )
+
 

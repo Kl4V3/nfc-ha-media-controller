@@ -11,6 +11,16 @@ document.addEventListener("DOMContentLoaded", () => {
         return fallback || key;
     }
 
+    // Display filter for NFC tag IDs (e.g. 04bcd968b82a81 -> 04-BC-D9-68-B8-2A-81)
+    function formatTagId(id) {
+        if (!id || typeof id !== 'string') return id || '';
+        const clean = id.replace(/[^0-9a-fA-F]/g, '');
+        if (clean.length >= 4 && clean.length % 2 === 0 && clean.length === id.length) {
+            return clean.toUpperCase().match(/.{1,2}/g).join('-');
+        }
+        return id;
+    }
+
     // State
     let tagsList = [];
     let readersList = [];
@@ -38,6 +48,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const elFilterStatus = document.getElementById("tags-filter-status");
     const elFilterType = document.getElementById("tags-filter-type");
     const btnAddTag = document.getElementById("btn-add-tag");
+    const btnDeleteUnconfigured = document.getElementById("btn-delete-unconfigured");
 
     // DOM Elements - Readers Table
     const elReadersTableBody = document.getElementById("readers-table-body");
@@ -127,6 +138,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const flasherMqttBroker = document.getElementById("flasher-mqtt-broker");
     const flasherMqttPort = document.getElementById("flasher-mqtt-port");
     const btnDownloadYaml = document.getElementById("btn-download-yaml");
+    const btnDownloadBin = document.getElementById("btn-download-bin");
     const btnCopyYaml = document.getElementById("btn-copy-yaml");
     const flasherYamlPreview = document.getElementById("flasher-yaml-preview");
     const yamlFilenameBadge = document.getElementById("yaml-filename-badge");
@@ -507,7 +519,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const typeFilter = elFilterType.value;
 
         const filtered = tagsList.filter(tag => {
-            const matchesQuery = (tag.tag_id && tag.tag_id.toLowerCase().includes(query)) ||
+            const matchesQuery = (tag.tag_id && (tag.tag_id.toLowerCase().includes(query) || formatTagId(tag.tag_id).toLowerCase().includes(query))) ||
                                  (tag.alias && tag.alias.toLowerCase().includes(query)) ||
                                  (tag.target_id && tag.target_id.toLowerCase().includes(query));
 
@@ -566,7 +578,7 @@ document.addEventListener("DOMContentLoaded", () => {
             return `
                 <tr>
                     <td>${statusBadge}</td>
-                    <td class="font-mono"><strong>${escapeHtml(tag.tag_id)}</strong></td>
+                    <td class="font-mono"><strong>${escapeHtml(formatTagId(tag.tag_id))}</strong></td>
                     <td>${escapeHtml(tag.alias || t("unnamed"))}</td>
                     <td>${actionTypeBadge}</td>
                     <td class="font-mono text-muted">${targetDisplay}</td>
@@ -641,7 +653,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     <td>${formatDate(item.timestamp)}</td>
                     <td>${statusBadge}</td>
                     <td>
-                        <strong class="font-mono">${escapeHtml(item.tag_id)}</strong>
+                        <strong class="font-mono">${escapeHtml(formatTagId(item.tag_id))}</strong>
                         ${item.tag_alias ? `<div class="text-muted text-xs">${escapeHtml(item.tag_alias)}</div>` : ""}
                     </td>
                     <td class="font-mono">${escapeHtml(item.reader_id)}</td>
@@ -759,6 +771,28 @@ document.addEventListener("DOMContentLoaded", () => {
         selectTagActionType.dispatchEvent(new Event("change"));
         elTagModal.classList.remove("hidden");
     });
+
+    if (btnDeleteUnconfigured) {
+        btnDeleteUnconfigured.addEventListener("click", async () => {
+            const confirmMsg = t("confirm_delete_unconfigured", "Are you sure you want to delete all unconfigured tags?");
+            if (!confirm(confirmMsg)) return;
+            try {
+                const res = await fetch("/api/tags/unconfigured", { method: "DELETE" });
+                if (res.ok) {
+                    const data = await res.json();
+                    const count = data.deleted_count || 0;
+                    const succTemplate = t("deleted_unconfigured_count", "Deleted {count} unconfigured tags.");
+                    alert(succTemplate.replace("{count}", count));
+                    await loadTags();
+                } else {
+                    alert("Failed to delete unconfigured tags.");
+                }
+            } catch (err) {
+                console.error("Error deleting unconfigured tags:", err);
+                alert("Error communicating with server: " + err);
+            }
+        });
+    }
 
     window.editTag = function(tagId) {
         const tag = tagsList.find(t => t.tag_id === tagId);
@@ -1168,23 +1202,24 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function showLiveBanner(event) {
         elLiveBanner.classList.remove("hidden");
+        const displayTagId = formatTagId(event.tag_id);
         if (event.status === "removed") {
             elLiveEventType.textContent = "REMOVED";
             elLiveEventType.style.background = "#ef4444";
-            elLiveTagName.textContent = `Tag ${event.tag_id} entfernt`;
+            elLiveTagName.textContent = `Tag ${displayTagId} entfernt`;
             elLiveEventDetails.textContent = `Stop an ${event.target_player}`;
             btnLiveEdit.classList.add("hidden");
         } else if (event.status === "warning") {
             elLiveEventType.textContent = "NEW TAG";
             elLiveEventType.style.background = "#f59e0b";
-            elLiveTagName.textContent = `Tag: ${event.tag_id}`;
+            elLiveTagName.textContent = `Tag: ${displayTagId}`;
             elLiveEventDetails.textContent = `Reader: ${event.reader_id}. Warning sound triggered.`;
             btnLiveEdit.classList.remove("hidden");
             btnLiveEdit.onclick = () => window.editTag(event.tag_id);
         } else {
             elLiveEventType.textContent = "SCANNED";
             elLiveEventType.style.background = "#10b981";
-            elLiveTagName.textContent = event.alias || `Tag ${event.tag_id}`;
+            elLiveTagName.textContent = event.alias || `Tag ${displayTagId}`;
             elLiveEventDetails.textContent = `${event.action_type || "Action"} -> ${event.target_player}`;
             btnLiveEdit.classList.remove("hidden");
             btnLiveEdit.onclick = () => window.editTag(event.tag_id);
@@ -1289,6 +1324,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 flasherLedGuideSection.style.display = "none";
             }
         }
+
+        // Download Bin Button visibility
+        if (btnDownloadBin) {
+            btnDownloadBin.style.display = (profile.id === "m5atom_lite_rfid" || profile.id === "m5atom_lite_rfid_native") ? "inline-flex" : "none";
+        }
     }
 
     let yamlDebounceTimer = null;
@@ -1352,6 +1392,14 @@ document.addEventListener("DOMContentLoaded", () => {
             if (wifiPass) params.append("wifi_password", wifiPass);
 
             window.location.href = `/api/firmware/generate-yaml?${params.toString()}`;
+        });
+    }
+
+    if (btnDownloadBin) {
+        btnDownloadBin.addEventListener("click", () => {
+            const profile = getSelectedHardwareProfile();
+            const hw = profile ? profile.id : "m5atom_lite_rfid_native";
+            window.location.href = `/api/firmware/download-bin/${hw}`;
         });
     }
 

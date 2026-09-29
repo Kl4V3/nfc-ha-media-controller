@@ -2,6 +2,7 @@ import json
 import logging
 import time
 import threading
+import asyncio
 from typing import Dict, Any, Callable, Optional, List
 import paho.mqtt.client as mqtt
 
@@ -12,7 +13,8 @@ from app.database import (
     upsert_reader,
     get_tag_by_id,
     auto_discover_or_update_tag,
-    add_scan_history
+    add_scan_history,
+    sanitize_tag_id
 )
 from app.audiobookshelf import AudiobookshelfClient
 
@@ -20,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 class MQTTService:
-    """Verwaltet die MQTT-Verbindung, Event-Verarbeitung und Publishing."""
+    """Manages MQTT connection, event processing and publishing."""
 
     def __init__(self, config: AppConfig, abs_client: AudiobookshelfClient):
         self.config = config
@@ -28,7 +30,24 @@ class MQTTService:
         self.client: Optional[mqtt.Client] = None
         self.is_connected = False
         self.event_listeners: List[Callable[[Dict[str, Any]], None]] = []
+        self._last_removed_events: Dict[str, float] = {}
         self._lock = threading.Lock()
+
+    def _force_async_sleep(self, seconds: float):
+        """Forces an asyncio.sleep call for the specified duration."""
+        res = asyncio.sleep(seconds)
+        if asyncio.iscoroutine(res):
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+
+            if loop and loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                    executor.submit(asyncio.run, res).result()
+            else:
+                asyncio.run(res)
 
     def register_event_listener(self, callback: Callable[[Dict[str, Any]], None]):
         """Registriert einen Listener für Live-Events (z. B. WebSocket Dispatcher)."""
@@ -236,14 +255,20 @@ class MQTTService:
         """
         Baut die standardisierte Music Assistant / ABS URI für einen Podcast oder eine Episode.
         Unterstützt:
-        - Spezifische Episode: audiobookshelf--<instance>://podcast_episode/<episode_id>
+        - Spezifische Episode: audiobookshelf--<instance>://podcast_episode/<podcast_id> <episode_id>
         - Ganzer Podcast: audiobookshelf--<instance>://podcast/<podcast_id>
         """
-        clean_id = (episode_id or podcast_id or "").strip()
-        if "://" in clean_id:
-            return clean_id
+        raw_podcast_id = (podcast_id or "").strip()
+        if "://" in raw_podcast_id:
+            return raw_podcast_id
 
-        route = "podcast_episode" if episode_id else "podcast"
+        if episode_id:
+            route = "podcast_episode"
+            clean_id = f"{raw_podcast_id} {str(episode_id).strip()}"
+        else:
+            route = "podcast"
+            clean_id = raw_podcast_id
+
         prefix = (reader_prefix or "").strip() or (self.config.audiobookshelf.provider_prefix or "").strip()
         instance_id = (self.config.audiobookshelf.mass_instance_id or "").strip()
 
@@ -265,7 +290,7 @@ class MQTTService:
         Zentrale Geschäftslogik für eingehende RFID-Events (Auflegen/Entfernen).
         Wird auch für den Test-Simulator im Web-Frontend verwendet.
         """
-        tag_id = str(data.get("tag_id", "")).strip()
+        tag_id = sanitize_tag_id(data.get("tag_id", ""))
         reader_id = str(data.get("reader_id", "")).strip()
         status = str(data.get("status", "scanned")).strip().lower()
 
@@ -299,8 +324,13 @@ class MQTTService:
                 "target_player": target_player
             })
 
-        # 2. Tag-Removed-Event (Toniebox-Prinzip)
+        # 2. Tag-Removed-Event (Toniebox-Prinzip: Lazy Evaluation, no series calculations here)
         if status == "removed":
+            now = time.time()
+            self._last_removed_events[reader_id] = now
+            if target_player:
+                self._last_removed_events[target_player] = now
+
             stop_payload = {
                 "status": "removed",
                 "action_type": "stop",
@@ -412,6 +442,25 @@ class MQTTService:
         if normalized_action in ["serie", "abs_serie"]:
             series_id = target_id.split("/")[-1]
             library_id = (tag.get("library_id") or "").strip() or None
+
+            # Debounce timing check: If the time difference between the last 'removed' event
+            # for this reader/player and the current 'scanned' event is less than 3 seconds,
+            # force an asyncio.sleep before querying the ABS API to ensure HA/MA syncs its stop state.
+            now = time.time()
+            last_removed = max(
+                self._last_removed_events.get(reader_id, 0.0),
+                self._last_removed_events.get(target_player, 0.0)
+            )
+            if last_removed > 0.0:
+                time_diff = now - last_removed
+                if time_diff < 3.0:
+                    sleep_delay = max(0.1, 3.0 - time_diff)
+                    logger.info(
+                        f"Debounce: Last 'removed' event for reader '{reader_id}' was {time_diff:.2f}s ago (< 3.0s). "
+                        f"Forcing asyncio.sleep({sleep_delay:.2f}s) before querying ABS API..."
+                    )
+                    self._force_async_sleep(sleep_delay)
+
             logger.info(f"Ermittle nächstes Buch für ABS-Serie '{series_id}' (Library: '{library_id or 'Auto'}', User-Token: {'vorhanden' if abs_user_token else 'fehlt'})...")
             book_info = self.abs_client.resolve_next_book_in_series(series_id, library_id=library_id, user_token=abs_user_token)
 
@@ -469,19 +518,21 @@ class MQTTService:
                 library_id = (tag.get("library_id") or "").strip() or None
                 logger.info(f"Ermittle aktuellste unfertige Episode für ABS-Podcast '{podcast_id}' (Library: '{library_id or 'Auto'}')...")
                 ep_info = self.abs_client.resolve_latest_podcast_episode(podcast_id, library_id=library_id, user_token=abs_user_token)
-                target_id = self._build_abs_podcast_uri(podcast_id, reader_prefix=abs_provider_prefix)
-                media_type = "podcast"
-                extra_params["start_item"] = "latest"
                 if ep_info and ep_info.get("episode_id"):
+                    target_id = self._build_abs_podcast_uri(podcast_id, episode_id=ep_info["episode_id"], reader_prefix=abs_provider_prefix)
+                    media_type = "podcast"
                     metadata["title"] = ep_info.get("episode_title")
                     metadata["podcast_name"] = ep_info.get("podcast_title")
                     metadata["pub_date"] = str(ep_info.get("pub_date") or "")
                     metadata["episode_id"] = ep_info.get("episode_id")
-                    logger.info(f"ABS Podcast '{ep_info.get('podcast_title')}' aufgelöst: '{ep_info.get('episode_title')}' -> Sende Podcast-URI: {target_id}")
+                    logger.info(f"ABS Podcast '{ep_info.get('podcast_title')}' aufgelöst: '{ep_info.get('episode_title')}' (ID: {ep_info.get('episode_id')}) -> Sende Episode-URI: {target_id}")
                 else:
+                    target_id = self._build_abs_podcast_uri(podcast_id, reader_prefix=abs_provider_prefix)
+                    media_type = "podcast"
+                    extra_params["start_item"] = "latest"
                     metadata["title"] = tag.get("alias")
                     metadata["podcast_name"] = tag.get("alias")
-                    logger.warning(f"Konnte Episode für Podcast '{podcast_id}' nicht über ABS auflösen. Sende URI: {target_id}")
+                    logger.warning(f"Konnte Episode für Podcast '{podcast_id}' nicht über ABS auflösen. Sende Fallback-URI: {target_id}")
 
         # 4d. Album (Music Assistant Library)
         elif normalized_action in ["album"]:

@@ -8,8 +8,15 @@ from typing import List, Optional, Dict, Any
 logger = logging.getLogger(__name__)
 
 
+def sanitize_tag_id(tag_id: Optional[str]) -> str:
+    """Sanitizes a tag ID by converting to lowercase and stripping hyphens and colons."""
+    if not tag_id:
+        return ""
+    return str(tag_id).replace("-", "").replace(":", "").strip().lower()
+
+
 def get_db_connection(db_path: str) -> sqlite3.Connection:
-    """Erstellt eine Verbindung zur SQLite-Datenbank mit Row-Factory."""
+    """Creates a connection to the SQLite database with row factory."""
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path, timeout=10.0)
     conn.row_factory = sqlite3.Row
@@ -19,11 +26,11 @@ def get_db_connection(db_path: str) -> sqlite3.Connection:
 
 
 def init_db(db_path: str):
-    """Initialisiert die Tabellen der Datenbank falls noch nicht vorhanden."""
+    """Initializes database tables and runs schema/data migrations."""
     conn = get_db_connection(db_path)
     try:
         with conn:
-            # Tabelle readers (Mapping von reader_id -> target_player + abs_user_token + abs_provider_prefix)
+            # Table: readers (mapping reader_id -> target_player + abs credentials)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS readers (
                     reader_id TEXT PRIMARY KEY,
@@ -36,13 +43,13 @@ def init_db(db_path: str):
                 )
             """)
 
-            # Migration falls Spalten in älterer DB-Version fehlen
+            # Migration if abs_provider_prefix is missing in older DB versions
             try:
                 conn.execute("ALTER TABLE readers ADD COLUMN abs_provider_prefix TEXT")
             except Exception:
                 pass
 
-            # Tabelle tags (Konfiguration der RFID/NFC-Tags)
+            # Table: tags (RFID/NFC tag configuration)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS tags (
                     tag_id TEXT PRIMARY KEY,
@@ -60,19 +67,19 @@ def init_db(db_path: str):
                 )
             """)
 
-            # Migration falls library_id in älterer DB-Version fehlt
+            # Migration if library_id is missing in older DB versions
             try:
                 conn.execute("ALTER TABLE tags ADD COLUMN library_id TEXT")
             except Exception:
                 pass
 
-            # Migration falls start_from_beginning in älterer DB-Version fehlt
+            # Migration if start_from_beginning is missing in older DB versions
             try:
                 conn.execute("ALTER TABLE tags ADD COLUMN start_from_beginning BOOLEAN DEFAULT 0")
             except Exception:
                 pass
 
-            # Tabelle scan_history (Protokoll der letzten Scans für UI & Debugging)
+            # Table: scan_history (log of recent scans for UI & debugging)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS scan_history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -85,12 +92,54 @@ def init_db(db_path: str):
                 )
             """)
 
-            # Index für schnelle Abfragen der Historie
+            # Index for history timestamps
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_history_timestamp 
                 ON scan_history(timestamp DESC)
             """)
-        logger.info(f"Datenbank erfolgreich initialisiert: {db_path}")
+
+            # Migration: Sanitize existing tag IDs in database (convert to lowercase, remove hyphens)
+            try:
+                cursor = conn.execute("""
+                    SELECT tag_id, alias, action_type, library_id, target_id, volume,
+                           random, start_from_beginning, extra_params, last_scanned, created_at, updated_at 
+                    FROM tags 
+                    WHERE tag_id LIKE '%-%' OR tag_id != lower(tag_id)
+                """)
+                unclean_tags = cursor.fetchall()
+                for r in unclean_tags:
+                    old_id = r["tag_id"]
+                    clean_id = sanitize_tag_id(old_id)
+                    if clean_id != old_id:
+                        existing = conn.execute("SELECT tag_id, action_type, target_id FROM tags WHERE tag_id = ?", (clean_id,)).fetchone()
+                        if existing:
+                            old_action = (r["action_type"] or "").strip()
+                            old_target = (r["target_id"] or "").strip()
+                            exist_action = (existing["action_type"] or "").strip()
+                            exist_target = (existing["target_id"] or "").strip()
+                            if (old_action or old_target) and not (exist_action or exist_target):
+                                conn.execute("""
+                                    UPDATE tags SET
+                                        alias = ?,
+                                        action_type = ?,
+                                        library_id = ?,
+                                        target_id = ?,
+                                        volume = ?,
+                                        random = ?,
+                                        start_from_beginning = ?,
+                                        extra_params = ?,
+                                        updated_at = ?
+                                    WHERE tag_id = ?
+                                """, (r["alias"], r["action_type"], r["library_id"], r["target_id"], r["volume"], r["random"], r["start_from_beginning"], r["extra_params"], r["updated_at"], clean_id))
+                            conn.execute("DELETE FROM tags WHERE tag_id = ?", (old_id,))
+                        else:
+                            conn.execute("UPDATE tags SET tag_id = ? WHERE tag_id = ?", (clean_id, old_id))
+
+                # Sanitize scan_history records
+                conn.execute("UPDATE scan_history SET tag_id = lower(replace(tag_id, '-', '')) WHERE tag_id LIKE '%-%' OR tag_id != lower(tag_id)")
+            except Exception as e:
+                logger.warning(f"Tag ID sanitization migration warning: {e}")
+        logger.info(f"Database successfully initialized: {db_path}")
     finally:
         conn.close()
 
@@ -132,10 +181,11 @@ def get_all_tags(db_path: str) -> List[Dict[str, Any]]:
 
 
 def get_tag_by_id(db_path: str, tag_id: str) -> Optional[Dict[str, Any]]:
-    """Ermittelt ein Tag anhand der ID."""
+    """Retrieves a tag by its ID."""
     conn = get_db_connection(db_path)
+    clean_id = sanitize_tag_id(tag_id)
     try:
-        cursor = conn.execute("SELECT * FROM tags WHERE tag_id = ?", (tag_id,))
+        cursor = conn.execute("SELECT * FROM tags WHERE tag_id = ?", (clean_id,))
         row = cursor.fetchone()
         if not row:
             return None
@@ -156,27 +206,28 @@ def get_tag_by_id(db_path: str, tag_id: str) -> Optional[Dict[str, Any]]:
 
 def auto_discover_or_update_tag(db_path: str, tag_id: str) -> Dict[str, Any]:
     """
-    Sucht das Tag. Wenn es nicht existiert, wird ein leerer Auto-Discovery-Eintrag angelegt.
-    Aktualisiert in jedem Fall das 'last_scanned' Feld.
-    Gibt das Tag-Objekt zurück und ein Flag 'is_new'.
+    Looks up the tag. If non-existent, creates an empty auto-discovery entry.
+    Updates the 'last_scanned' field in all cases.
+    Returns the tag dictionary and an 'is_new' flag.
     """
     conn = get_db_connection(db_path)
+    clean_id = sanitize_tag_id(tag_id)
     try:
         with conn:
-            cursor = conn.execute("SELECT * FROM tags WHERE tag_id = ?", (tag_id,))
+            cursor = conn.execute("SELECT * FROM tags WHERE tag_id = ?", (clean_id,))
             row = cursor.fetchone()
             now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
 
             if not row:
-                # Neu anlegen (Auto-Discovery)
-                default_alias = f"Unbekannter Tag {tag_id}"
+                # Create new auto-discovered tag
+                default_alias = f"Unbekannter Tag {clean_id}"
                 conn.execute("""
                     INSERT INTO tags (tag_id, alias, action_type, library_id, target_id, volume, random, start_from_beginning, extra_params, last_scanned, created_at, updated_at)
                     VALUES (?, ?, '', '', '', NULL, 0, 0, '{}', ?, ?, ?)
-                """, (tag_id, default_alias, now, now, now))
-                logger.info(f"Auto-Discovery: Neuer Tag '{tag_id}' in Datenbank angelegt.")
+                """, (clean_id, default_alias, now, now, now))
+                logger.info(f"Auto-Discovery: New tag '{clean_id}' registered in database.")
                 return {
-                    "tag_id": tag_id,
+                    "tag_id": clean_id,
                     "alias": default_alias,
                     "action_type": "",
                     "library_id": "",
@@ -190,8 +241,8 @@ def auto_discover_or_update_tag(db_path: str, tag_id: str) -> Dict[str, Any]:
                     "last_scanned": now
                 }
             else:
-                # Vorhandenen Tag aktualisieren (last_scanned)
-                conn.execute("UPDATE tags SET last_scanned = ? WHERE tag_id = ?", (now, tag_id))
+                # Update last_scanned for existing tag
+                conn.execute("UPDATE tags SET last_scanned = ? WHERE tag_id = ?", (now, clean_id))
                 tag = dict(row)
                 tag["random"] = bool(tag["random"])
                 tag["start_from_beginning"] = bool(tag.get("start_from_beginning", 0))
@@ -210,9 +261,9 @@ def auto_discover_or_update_tag(db_path: str, tag_id: str) -> Dict[str, Any]:
 
 
 def upsert_tag(db_path: str, tag_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Speichert oder aktualisiert ein Tag."""
+    """Inserts or updates a tag record."""
     conn = get_db_connection(db_path)
-    tag_id = tag_data.get("tag_id")
+    tag_id = sanitize_tag_id(tag_data.get("tag_id"))
     alias = tag_data.get("alias", "")
     action_type = tag_data.get("action_type", "")
     library_id = tag_data.get("library_id", "")
@@ -253,12 +304,34 @@ def upsert_tag(db_path: str, tag_data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def delete_tag(db_path: str, tag_id: str) -> bool:
-    """Löscht ein Tag aus der Datenbank."""
+    """Deletes a tag from the database."""
+    conn = get_db_connection(db_path)
+    clean_id = sanitize_tag_id(tag_id)
+    try:
+        with conn:
+            cursor = conn.execute("DELETE FROM tags WHERE tag_id = ?", (clean_id,))
+            return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+def delete_unconfigured_tags(db_path: str) -> int:
+    """
+    Deletes all tag records lacking a valid target or action.
+    Returns the number of deleted records.
+    """
     conn = get_db_connection(db_path)
     try:
         with conn:
-            cursor = conn.execute("DELETE FROM tags WHERE tag_id = ?", (tag_id,))
-            return cursor.rowcount > 0
+            cursor = conn.execute("""
+                DELETE FROM tags 
+                WHERE action_type IS NULL OR trim(action_type) = '' 
+                   OR lower(trim(action_type)) = 'none'
+                   OR target_id IS NULL OR trim(target_id) = ''
+            """)
+            deleted_count = cursor.rowcount
+            logger.info(f"Deleted {deleted_count} unconfigured tags from database.")
+            return deleted_count
     finally:
         conn.close()
 
@@ -331,14 +404,15 @@ def delete_reader(db_path: str, reader_id: str) -> bool:
 # ==============================================================================
 
 def add_scan_history(db_path: str, tag_id: str, reader_id: str, status: str, action_executed: str, payload: str):
-    """Fügt einen Eintrag in die Scan-Historie ein."""
+    """Inserts an entry into the scan history."""
     conn = get_db_connection(db_path)
+    clean_id = sanitize_tag_id(tag_id)
     try:
         with conn:
             conn.execute("""
                 INSERT INTO scan_history (tag_id, reader_id, status, action_executed, payload)
                 VALUES (?, ?, ?, ?, ?)
-            """, (tag_id, reader_id, status, action_executed, payload))
+            """, (clean_id, reader_id, status, action_executed, payload))
             # Halte maximal die letzten 200 Einträge
             conn.execute("""
                 DELETE FROM scan_history 

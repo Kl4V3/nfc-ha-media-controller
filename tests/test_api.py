@@ -68,7 +68,7 @@ def test_tags_api_crud(client):
     res_post = client.post("/api/tags", json=payload)
     assert res_post.status_code == 200
     created = res_post.json()
-    assert created["tag_id"] == "TAG_A1"
+    assert created["tag_id"] == "tag_a1"
     assert created["alias"] == "Lieblingslied"
 
     # 3. Tag abrufen

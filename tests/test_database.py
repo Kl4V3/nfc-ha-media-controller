@@ -40,14 +40,14 @@ def test_auto_discovery_tag(temp_db):
     # 1. Neuer Tag gescannt
     res = auto_discover_or_update_tag(temp_db, "04AABBCCDD")
     assert res["is_new"] is True
-    assert res["tag_id"] == "04AABBCCDD"
+    assert res["tag_id"] == "04aabbccdd"
     assert res["action_type"] == ""
     assert "Unbekannter Tag" in res["alias"]
 
     # In DB prüfen
     tag = get_tag_by_id(temp_db, "04AABBCCDD")
     assert tag is not None
-    assert tag["tag_id"] == "04AABBCCDD"
+    assert tag["tag_id"] == "04aabbccdd"
     assert tag["last_scanned"] is not None
 
     # 2. Zweiter Scan des gleichen Tags (sollte is_new = False sein)
@@ -66,7 +66,7 @@ def test_upsert_and_delete_tag(temp_db):
         "extra_params": '{"test": 123}'
     }
     saved = upsert_tag(temp_db, tag_data)
-    assert saved["tag_id"] == "TAG123"
+    assert saved["tag_id"] == "tag123"
     assert saved["alias"] == "Die drei ??? Kids"
     assert saved["action_type"] == "Serie"
     assert saved["volume"] == 25
@@ -107,5 +107,5 @@ def test_scan_history(temp_db):
     add_scan_history(temp_db, "TAG99", "reader_kizi", "scanned", "media", '{"test": 1}')
     history = get_scan_history(temp_db, limit=10)
     assert len(history) == 1
-    assert history[0]["tag_id"] == "TAG99"
+    assert history[0]["tag_id"] == "tag99"
     assert history[0]["action_executed"] == "media"

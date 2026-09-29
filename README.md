@@ -1,159 +1,172 @@
-# NFC Media Controller 🎵🏷️
+# NFC Media Controller
 
 [![Docker Image](https://img.shields.io/docker/v/theklave/nfc-ha-media-controller?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/theklave/nfc-ha-media-controller)
-[![Release](https://img.shields.io/badge/version-0.3.5-brightgreen.svg)](https://github.com/Kl4V3/nfc-ha-media-controller/releases)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Release](https://img.shields.io/badge/version-0.3.6-brightgreen.svg)](https://github.com/Kl4V3/nfc-ha-media-controller/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg?logo=python)](https://www.python.org/)
 
-An event-driven, multi-room audio and smart home middleware designed around the **Toniebox principle** (**Place Tag = Play, Remove Tag = Stop**).
+NFC Media Controller is a containerized, event-driven middleware designed to bridge physical NFC/RFID tag presence with distributed media playback and home automation systems. It functions as a centralized integration layer connecting network-attached microcontrollers (ESP32, ESP8266, M5Stack) with execution platforms, primarily Home Assistant, Music Assistant, and Audiobookshelf.
 
-Seamlessly connects custom RFID/NFC hardware readers to **Home Assistant**, **Music Assistant**, and **Audiobookshelf**.
-
----
-
-## 📑 Table of Contents
-
-- [System Architecture](#-system-architecture)
-- [Key Features](#-key-features)
-- [Hardware Setups](#-hardware-setups)
-  - [ESP32 + PN5180 (Toniebox Figures & ISO-15693 / ISO-14443)](#1--esp32--nxp-pn5180-recommended-for-toniebox-figures)
-  - [M5Stack ATOM Lite + RFID 2 Unit (Plug & Play Grove)](#2--m5stack-atom-lite--rfid-2-unit-plug--play-no-soldering)
-  - [Other ESPHome Setups (PN532 / RC522)](#3-esp32-with-pn532-or-rc522)
-- [Quick Start with Docker](#-quick-start-with-docker)
-- [Configuration & Environment Variables](#-configuration--environment-variables)
-- [Home Assistant Automation Setup](#-home-assistant-automation-setup)
-- [Audiobookshelf, Series & Podcast Management](#-audiobookshelf-series--podcast-management)
-- [Web Dashboard & Firmware Flasher](#-web-dashboard--firmware-flasher)
-- [REST API & WebSocket Reference](#-rest-api--websocket-reference)
-- [Local Development & Testing](#-local-development--testing)
-- [License](#-license)
+The system enforces deterministic physical presence playback: placing an assigned tag on a reader triggers target media or scene execution, while removing the tag immediately halts playback.
 
 ---
 
-## 📐 System Architecture
+## Table of Contents
+
+- [System Architecture](#system-architecture)
+- [Core Capabilities](#core-capabilities)
+- [Supported Media Types & Routing](#supported-media-types--routing)
+- [Hardware Configurations & Firmware](#hardware-configurations--firmware)
+  - [M5Stack ATOM Lite + RFID 2 Unit (Native C++ / ESPHome)](#1-m5stack-atom-lite--rfid-2-unit-recommended)
+  - [ESP32 + NXP PN5180 (ISO-15693 / SLIX2 Toniebox Figures)](#2-esp32--nxp-pn5180-iso-15693--slix2)
+  - [Standard ESP32 Setups (PN532 / RC522)](#3-standard-esp32-setups-pn532--rc522)
+- [Deployment](#deployment)
+  - [Docker Compose](#docker-compose)
+  - [Environment Variables](#environment-variables)
+- [Downstream Automation Integration (Home Assistant)](#downstream-automation-integration-home-assistant)
+  - [Option A: Dedicated Home Assistant Script](#option-a-dedicated-home-assistant-script)
+  - [Option B: Direct Automation / Blueprint](#option-b-direct-automation--blueprint)
+- [Audiobookshelf Integration & Multi-Room Routing](#audiobookshelf-integration--multi-room-routing)
+- [Web Dashboard & Management Interface](#web-dashboard--management-interface)
+- [REST API & WebSocket Reference](#rest-api--websocket-reference)
+- [Local Development & Verification](#local-development--verification)
+- [License](#license)
+
+---
+
+## System Architecture
 
 ```text
-┌────────────────────────────────────────────────────────────────────────┐
-│                          1. Hardware Readers                           │
-│  ESP32 + PN5180 (Tonie figures & NFC) OR M5Stack / ESPHome RFID       │
-│    ├── Tag placed  -> MQTT "rfid/scanned"  {"status": "scanned", ...}  │
-│    └── Tag removed -> MQTT "rfid/scanned"  {"status": "removed", ...}  │
-└───────────────────────────────────┬────────────────────────────────────┘
-                                    │
-                                    ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                        2. Docker Middleware                            │
-│  FastAPI + Paho-MQTT + SQLite + Audiobookshelf API                     │
-│    ├── Auto-Discovery & Warning Sound for New/Unconfigured Tags        │
-│    ├── Audiobookshelf API (Resolves next unplayed book or podcast)     │
-│    ├── Multi-User Token Routing (Room-specific listening progress)     │
-│    ├── "Always Start from Beginning" Progress Reset & Seek             │
-│    ├── Web Dashboard (Port 5000) & Firmware Config Generator           │
-│    └── Dispatches Unified Action Payload -> MQTT "rfid/action"         │
-└───────────────────────────────────┬────────────────────────────────────┘
-                                    │
-                                    ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                    3. Execution (Home Assistant)                       │
-│  Home Assistant Script / Automation                                    │
-│    ├── status == "removed" -> media_player.media_stop                  │
-│    ├── action == "warning" -> Plays configurable missing tag sound     │
-│    ├── action == "media"   -> music_assistant.play_media               │
-│    │                          + media_player.media_seek (if from start)│
-│    └── action == "scene"   -> scene.turn_on                            │
-└────────────────────────────────────────────────────────────────────────┘
++------------------------------------------------------------------------+
+|                          1. Hardware Readers                           |
+|  ESP32 / M5Stack running Native PlatformIO firmware or ESPHome         |
+|    - Tag Placed   -> MQTT "rfid/scanned"  {"status": "scanned", ...}   |
+|    - Tag Removed  -> MQTT "rfid/scanned"  {"status": "removed", ...}   |
++-----------------------------------┬------------------------------------+
+                                    |
+                                    v
++------------------------------------------------------------------------+
+|                        2. Middleware Container                         |
+|  FastAPI + Paho-MQTT + SQLite + Audiobookshelf Client Engine           |
+|    - Tag ID Sanitization (Uniform hex lowercase, stripped separators)  |
+|    - Lazy Evaluation & Debounce Protection (< 3s sync buffer)          |
+|    - Audiobookshelf Series Auto-Advance (95% completion threshold)     |
+|    - Podcast Episode Resolution (Newest unplayed episode priority)     |
+|    - Multi-User Token Routing (Room-isolated listening positions)      |
+|    - Web Management Dashboard (Port 5000) & Precompiled Firmwares      |
+|    - Dispatches Normalized Action Payload -> MQTT "rfid/action"        |
++-----------------------------------┬------------------------------------+
+                                    |
+                                    v
++------------------------------------------------------------------------+
+|                    3. Execution (Home Assistant)                       |
+|  Automation or Script Handler                                          |
+|    - status == "removed" -> media_player.media_stop                    |
+|    - action == "warning" -> Plays configured missing-tag sound         |
+|    - action == "media"   -> music_assistant.play_media                 |
+|    - action == "scene"   -> scene.turn_on                              |
++------------------------------------------------------------------------+
 ```
 
 ---
 
-## 🌟 Key Features
+## Core Capabilities
 
-- **True Toniebox Presence Detection:**
-  - **Tag Placed (`scanned`):** Immediately plays the assigned audiobook, series, podcast, or album on the designated media player.
-  - **Tag Removed (`removed`):** Instantly stops playback (`media_player.media_stop`).
-- **Full Toniebox Figure Support:**
-  - Dedicated firmware for **NXP PN5180** NFC readers unlocks original Tonie figures using the **iCode SLIX2 Privacy Mode password handshake** (`0x5B 0x6E 0xFD 0x7F`).
-- **Smart Audiobook & Series Progress (Audiobookshelf):**
-  - For series, the middleware automatically resolves the **next unfinished book** in chronological order based on the user's progress.
-  - When all books in a series are completed, it seamlessly loops back to book 1.
-- **Always Start from Beginning (⏮️):**
-  - Optional setting for individual audiobooks and series to always start playback from `0:00`, while preserving series auto-advancement logic.
-- **Podcast Episode Resolution:**
-  - Automatically identifies and queues the **latest unfinished podcast episode** from Audiobookshelf or Music Assistant (`library://podcast/<id>`).
+- **Deterministic Physical Presence Playback:**
+  - **Tag Placed (`scanned`):** Resolves assigned media and dispatches playback commands to the target player.
+  - **Tag Removed (`removed`):** Immediately issues a stop action (`media_player.media_stop`) with playlist clearing.
+- **Lazy Evaluation & Debounce State Protection:**
+  - Tag removal events immediately trigger playback stoppage without initiating heavy upstream API queries.
+  - Scan events occurring within 3 seconds of a removal event automatically trigger an asynchronous debounce delay to allow downstream players and Audiobookshelf sync sessions to settle cleanly.
+- **Dynamic Series Progression (Audiobookshelf):**
+  - Evaluates series completion states based on a 95% completion threshold (`progress >= 0.95` or `isFinished == true`).
+  - Automatically identifies and queues the next unfinished book in sequence.
+  - Active server synchronization: Automatically invokes Audiobookshelf's `mark_as_finished` endpoint for completed books to prevent stale resume positions.
+  - Seamless loopback: Automatically resets to Book 1 once all titles in a series are complete.
+- **Reverse-Chronological Podcast Resolution:**
+  - Automatically queries the podcast feed in Audiobookshelf and resolves the newest unplayed episode.
+  - Targets the exact episode URI using Music Assistant's composite item identifier schema (`audiobookshelf--<instance>://podcast_episode/<podcast_id> <episode_id>`).
 - **Multi-User Progress Isolation:**
-  - Assign separate Audiobookshelf user tokens to different readers/rooms so multiple listeners can enjoy the same series independently without overwriting each other's progress.
-- **Auto-Discovery & Safe Missing-Tag Fallback:**
-  - Scanned unknown tags are automatically registered in the SQLite database.
-  - Unconfigured tags trigger a pleasant warning sound notification instead of silent playback failures.
-- **Responsive Web Dashboard:**
-  - Default **English interface** with German translation support (`language: "de"`).
-  - Audiobookshelf Explorer & In-Modal Picker for 1-click book/series/podcast ID assignment.
-  - Firmware generator with ready-to-flash `config.h` and ESPHome YAML outputs.
-  - Real-time live event feed via WebSockets.
+  - Assign individual Audiobookshelf authentication tokens per reader/zone. Multiple users in different rooms can track individual progress across the same book or series without state collision.
+- **Hardware Agnostic & Pre-Compiled Firmware:**
+  - Built-in support for NXP PN5180 (ISO-15693 SLIX2 Privacy Mode password handshake for Tonie figures), M5Stack ATOM Lite + RFID 2 Unit (WS2812 status LED, web diagnostics on port 80), PN532, and RC522.
+  - Web UI includes configuration generation and direct pre-compiled binary downloads.
+- **Tag ID Normalization & Database Health:**
+  - Ingested tag IDs are automatically sanitized into uniform lowercase hex strings without spaces, dashes, or colons.
+  - Automatic database schema migration cleans existing records on startup.
+  - Dedicated bulk cleanup endpoint for purging unconfigured auto-discovered tags.
 
 ---
 
-## 🔌 Hardware Setups
+## Supported Media Types & Routing
 
-### 1. ⭐ ESP32 + NXP PN5180 (Recommended for Toniebox Figures)
+| Action Type | Target Configuration | Resolved Payload `target_id` | Downstream Handler |
+| :--- | :--- | :--- | :--- |
+| **Audiobook / Book** | Audiobookshelf Item ID | `audiobookshelf--<instance>://audiobook/<item_id>` | Music Assistant (`play_media`) |
+| **Series** | Audiobookshelf Series ID | `audiobookshelf--<instance>://audiobook/<next_book_id>` | Music Assistant (`play_media`) |
+| **Podcast** | Audiobookshelf Podcast ID | `audiobookshelf--<instance>://podcast_episode/<podcast_id> <episode_id>` | Music Assistant (`play_media`) |
+| **Native Podcast** | `library://podcast/<id>` | `library://podcast/<id>` with `extra_params: {"start_item": "latest"}` | Music Assistant (`play_media`) |
+| **Album** | Music Assistant URI | `library://album/<id>` or `mass://album/<id>` | Music Assistant (`play_media`) |
+| **Playlist** | Music Assistant URI | `library://playlist/<id>` or `mass://playlist/<id>` | Music Assistant (`play_media`) |
+| **Scene** | Home Assistant Scene Entity | `scene.<name>` | Home Assistant (`scene.turn_on`) |
+| **Warning** | Missing/Unconfigured Tag | `media-source://media_source/local/warningMissingNFC.wav` | Media Player (`play_media`) |
 
-Standard NFC modules (such as RC522 or PN532) only support ISO-14443 and cannot read Toniebox figures. Original Toniebox figures use **NXP ICODE SLIX2 (ISO-15693)** chips operating in a special **Privacy Mode**.
+---
 
-The **NXP PN5180** features full ISO-15693 hardware support and can execute custom SPI commands to unlock and read Tonie figures.
+## Hardware Configurations & Firmware
 
-#### Wiring Diagram (SPI)
+### 1. M5Stack ATOM Lite + RFID 2 Unit (Recommended)
 
-| PN5180 Pin | ESP32 GPIO | Description |
+A compact, solderless reader solution based on the ESP32 and NXP WS1850S (I2C).
+
+- **Hardware:** M5Stack ATOM Lite coupled with the RFID 2 Unit via Grove connector.
+- **Visual Feedback:** Integrated WS2812 RGB LED (Green = Ready, Blue = Connecting, Cyan = Tag Active, Orange = Tag Removed, Red = Error).
+- **Diagnostics:** Built-in web dashboard accessible on port 80 of the reader displaying device uptime, Wi-Fi RSSI, MQTT status, and live tag scans.
+- **Source & Configuration:** Located in `firmware/m5atom_lite_rfid/`.
+- **Wiring (Grove Cable):**
+  - Yellow: I2C SDA (GPIO 26)
+  - White: I2C SCL (GPIO 32)
+  - Red: 5V Power
+  - Black: Ground
+
+An alternative ESPHome configuration is provided in `esphome/esphome_m5atom_lite_rfid.yaml`.
+
+---
+
+### 2. ESP32 + NXP PN5180 (ISO-15693 / SLIX2)
+
+Required for reading high-frequency ISO-15693 transponders, including original Toniebox figures protected by privacy mode passwords.
+
+- **Operating Principle:** Transmits the SLIX2 privacy password unlock handshake (`0x5B 0x6E 0xFD 0x7F`) over SPI to expose transponder memory.
+- **Source:** PlatformIO project located in `firmware/esp32_pn5180/`.
+
+#### SPI Pin Mapping
+
+| PN5180 Pin | ESP32 GPIO | Function |
 | :--- | :--- | :--- |
 | **MOSI** | **GPIO 23** | SPI Master Out Slave In |
 | **MISO** | **GPIO 19** | SPI Master In Slave Out |
 | **SCK** | **GPIO 18** | SPI Clock |
 | **NSS / CS** | **GPIO 5** | SPI Chip Select |
-| **BUSY** | **GPIO 21** | PN5180 Busy State |
-| **RST** | **GPIO 22** | PN5180 Reset |
-| **3.3V / 5V** | **3.3V / 5V** | Power Supply (Ensure clean 3.3V/5V) |
-| **GND** | **GND** | Ground |
-
-#### Firmware Installation
-The complete PlatformIO firmware is included in [`firmware/esp32_pn5180/`](firmware/esp32_pn5180/):
-1. Copy `config.example.h` to `config.h` (or generate it directly from the Web Dashboard's **Firmware & Flasher** tab).
-2. Fill in your Wi-Fi and MQTT credentials.
-3. Flash the ESP32 using PlatformIO:
-   ```bash
-   cd firmware/esp32_pn5180
-   pio run -t upload
-   ```
+| **BUSY** | **GPIO 21** | Hardware Busy Signal |
+| **RST** | **GPIO 22** | Hardware Reset |
+| **3.3V / 5V** | **3.3V / 5V** | Regulated Supply Voltage |
+| **GND** | **GND** | Common Ground |
 
 ---
 
-### 2. ⭐ M5Stack ATOM Lite + RFID 2 Unit (Plug & Play, No Soldering)
+### 3. Standard ESP32 Setups (PN532 / RC522)
 
-For standard NFC cards, stickers, and keyfobs (NTAG213/215/216, Mifare Classic):
+For standard ISO-14443 Type A tags (NTAG213, NTAG215, NTAG216, Mifare Classic):
 
-- **No soldering needed:** Connect via the included Grove cable.
-- **Integrated RGB Status LED:** Visual state feedback (Green = Ready, Blue = Connecting, Cyan = Play, Orange = Stop, Red = Error).
-- **Integrated Push Button:** For status ping and reboot.
-- **ESPHome Template:** Pre-configured in [`esphome/esphome_m5atom_lite_rfid.yaml`](esphome/esphome_m5atom_lite_rfid.yaml).
-
-| Grove Wire | Signal | ATOM Lite GPIO |
-| :--- | :--- | :--- |
-| **Yellow** | I2C SDA | **GPIO 26** |
-| **White** | I2C SCL | **GPIO 32** |
-| **Red** | Power (5V) | **5V** |
-| **Black** | Ground | **GND** |
+- **PN532 (I2C):** GPIO 21 (SDA), GPIO 22 (SCL). Config: `esphome/esphome_pn532_i2c.yaml`.
+- **RC522 (SPI):** SCK (GPIO 18), MOSI (GPIO 23), MISO (GPIO 19), CS (GPIO 5), RST (GPIO 22). Config: `esphome/esphome_rc522_spi.yaml`.
 
 ---
 
-### 3. ESP32 with PN532 or RC522
+## Deployment
 
-- **PN532 (I2C):** Uses GPIO 21 (SDA) and GPIO 22 (SCL). Config: [`esphome/esphome_pn532_i2c.yaml`](esphome/esphome_pn532_i2c.yaml).
-- **RC522 (SPI):** Uses SCK (18), MOSI (23), MISO (19), CS (5), RST (22). Config: [`esphome/esphome_rc522_spi.yaml`](esphome/esphome_rc522_spi.yaml).
-
----
-
-## 🚀 Quick Start with Docker
-
-### 1. Create `docker-compose.yml`
+### Docker Compose
 
 ```yaml
 services:
@@ -167,62 +180,148 @@ services:
       - ./data:/app/data
     environment:
       - TZ=Europe/Berlin
-      # MQTT Broker Settings
+      # MQTT Broker Connectivity
       - MQTT_BROKER=192.168.1.50
       - MQTT_PORT=1883
       - MQTT_USER=your_mqtt_user
       - MQTT_PASSWORD=your_mqtt_password
       - MQTT_TOPIC_SCANNED=rfid/scanned
       - MQTT_TOPIC_ACTION=rfid/action
-      # Audiobookshelf Settings (Optional)
+      # Audiobookshelf Server Connectivity
       - ABS_BASE_URL=http://192.168.1.50:13378
-      - ABS_DEFAULT_TOKEN=your_audiobookshelf_token
+      - ABS_DEFAULT_TOKEN=your_api_token
       - MASS_ABS_INSTANCE_ID=xPQT49LN
-      # UI Settings
+      # System Configuration
       - UI_LANGUAGE=en # Options: "en" or "de"
       - LOG_LEVEL=INFO
 ```
 
-### 2. Start the Service
-
-```bash
-docker compose up -d
-```
-
-### 3. Access the Dashboard
-
-Open your browser at:  
-👉 **`http://<server-ip>:5000`**
-
----
-
-## ⚙️ Configuration & Environment Variables
-
-Settings can be specified via environment variables or inside `/app/data/config.yaml` (see [`config/config.example.yaml`](config/config.example.yaml)).
+### Environment Variables
 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
-| `MQTT_BROKER` | Hostname or IP of your MQTT Broker | `192.168.1.50` |
-| `MQTT_PORT` | MQTT Port | `1883` |
-| `MQTT_USER` | MQTT Username | `""` |
-| `MQTT_PASSWORD` | MQTT Password | `""` |
-| `MQTT_TOPIC_SCANNED` | Topic where readers publish scan events | `rfid/scanned` |
-| `MQTT_TOPIC_ACTION` | Topic where Home Assistant listens | `rfid/action` |
-| `ABS_BASE_URL` | Audiobookshelf server URL | `""` |
-| `ABS_DEFAULT_TOKEN` | Audiobookshelf API token | `""` |
-| `MASS_ABS_INSTANCE_ID` | Music Assistant ABS Provider ID prefix | `""` |
-| `WARNING_SOUND_URI` | Media URI for unconfigured tags | `media-source://media_source/local/warningMissingNFC.wav` |
-| `DEFAULT_VOLUME` | Default playback volume (0-100) | `20` |
-| `UI_LANGUAGE` | Dashboard UI language (`en` or `de`) | `en` |
-| `LOG_LEVEL` | Logging verbosity (`DEBUG`, `INFO`, `WARNING`) | `INFO` |
+| `MQTT_BROKER` | Hostname or IP of the MQTT broker | `192.168.1.50` |
+| `MQTT_PORT` | MQTT broker port | `1883` |
+| `MQTT_USER` | MQTT authentication username | `""` |
+| `MQTT_PASSWORD` | MQTT authentication password | `""` |
+| `MQTT_TOPIC_SCANNED` | Inbound MQTT topic for reader scan events | `rfid/scanned` |
+| `MQTT_TOPIC_ACTION` | Outbound MQTT topic for normalized controller actions | `rfid/action` |
+| `ABS_BASE_URL` | Base URL of the Audiobookshelf instance | `""` |
+| `ABS_DEFAULT_TOKEN` | Global Audiobookshelf API token | `""` |
+| `MASS_ABS_INSTANCE_ID` | Music Assistant Audiobookshelf provider instance prefix | `""` |
+| `WARNING_SOUND_URI` | Audio URI triggered when scanning unconfigured tags | `media-source://media_source/local/warningMissingNFC.wav` |
+| `DEFAULT_VOLUME` | Fallback volume level (0-100) | `20` |
+| `UI_LANGUAGE` | Management interface localization (`en` or `de`) | `en` |
+| `LOG_LEVEL` | Application logging verbosity (`DEBUG`, `INFO`, `WARNING`) | `INFO` |
 
 ---
 
-## 🏠 Home Assistant Automation Setup
+## Downstream Automation Integration (Home Assistant)
 
-The Docker container publishes all processed actions as structured JSON to `rfid/action`.
+The controller middleware publishes normalized action payloads to `rfid/action`. You can execute these commands in Home Assistant using either a parameterized script or a standalone automation.
 
-Create a single automation in Home Assistant (or import [`homeassistant/automations.yaml`](homeassistant/automations.yaml)):
+### Option A: Dedicated Home Assistant Script
+
+Create a script named `NFC Media Action` (`script.nfc_media_action`) in Home Assistant:
+
+```yaml
+alias: NFC Media Action
+mode: parallel
+fields:
+  payload:
+    description: JSON action payload dispatched by NFC Media Controller
+sequence:
+  - variables:
+      action: "{{ payload.action_type }}"
+      player: "{{ payload.target_player }}"
+      target: "{{ payload.target_id }}"
+      vol: "{{ payload.volume }}"
+      is_random: "{{ payload.random | default(false) }}"
+      m_type: "{{ payload.media_type | default('track') }}"
+  - choose:
+      # 1. Stop playback on tag removal
+      - conditions:
+          - condition: template
+            value_template: "{{ action == 'stop' }}"
+        sequence:
+          - action: media_player.media_stop
+            target:
+              entity_id: "{{ player }}"
+          - delay: "00:00:01"
+          - action: media_player.clear_playlist
+            target:
+              entity_id: "{{ player }}"
+
+      # 2. Trigger smart home scene
+      - conditions:
+          - condition: template
+            value_template: "{{ action == 'scene' }}"
+        sequence:
+          - action: scene.turn_on
+            target:
+              entity_id: "{{ target }}"
+
+      # 3. Play warning sound for unconfigured tags
+      - conditions:
+          - condition: template
+            value_template: "{{ action == 'warning' }}"
+        sequence:
+          - action: media_player.play_media
+            target:
+              entity_id: "{{ player }}"
+            data:
+              media_content_id: "{{ target }}"
+              media_content_type: music
+
+      # 4. Stream media via Music Assistant
+      - conditions:
+          - condition: template
+            value_template: "{{ action == 'media' or action == 'play' }}"
+        sequence:
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ vol is not none and vol != '' }}"
+                sequence:
+                  - action: media_player.volume_set
+                    target:
+                      entity_id: "{{ player }}"
+                    data:
+                      volume_level: "{{ (vol | float) / 100 }}"
+          - action: media_player.shuffle_set
+            target:
+              entity_id: "{{ player }}"
+            data:
+              shuffle: "{{ is_random }}"
+          - action: music_assistant.play_media
+            target:
+              entity_id: "{{ player }}"
+            data:
+              media_id: "{{ target }}"
+              media_type: "{{ m_type }}"
+              enqueue: replace
+```
+
+Connect MQTT to the script with a lightweight trigger automation:
+
+```yaml
+alias: "NFC Controller: Trigger Bridge"
+mode: queued
+max: 10
+trigger:
+  - platform: mqtt
+    topic: "rfid/action"
+action:
+  - action: script.nfc_media_action
+    data:
+      payload: "{{ trigger.payload_json }}"
+```
+
+---
+
+### Option B: Direct Automation / Blueprint
+
+For an all-in-one automation without a separate script, import `homeassistant/blueprint_nfc_media.yaml` or use `homeassistant/automations.yaml`:
 
 ```yaml
 alias: "NFC Controller: MQTT Action Handler"
@@ -241,10 +340,8 @@ action:
       target_id: "{{ data.target_id | default('') }}"
       volume: "{{ data.volume | default(none) }}"
       random_flag: "{{ data.random | default(false) }}"
-      start_from_beginning: "{{ data.start_from_beginning | default(false) }}"
 
   - choose:
-      # 1. STOP ON TAG REMOVAL (Toniebox behavior)
       - conditions:
           - condition: template
             value_template: "{{ status == 'removed' or action_type == 'stop' }}"
@@ -255,7 +352,6 @@ action:
             target:
               entity_id: "{{ target_player }}"
 
-      # 2. WARNING SOUND FOR UNCONFIGURED TAGS
       - conditions:
           - condition: template
             value_template: "{{ action_type == 'warning' }}"
@@ -267,12 +363,10 @@ action:
               media_content_id: "{{ target_id }}"
               media_content_type: music
 
-      # 3. MEDIA PLAYBACK (Music Assistant)
       - conditions:
           - condition: template
             value_template: "{{ action_type == 'media' and target_player != '' and target_id != '' }}"
         sequence:
-          # Set Volume if defined
           - if:
               - condition: template
                 value_template: "{{ volume is not none and volume != '' }}"
@@ -282,15 +376,11 @@ action:
                   entity_id: "{{ target_player }}"
                 data:
                   volume_level: "{{ (volume | float) / 100 }}"
-
-          # Set Shuffle State
           - action: media_player.shuffle_set
             target:
               entity_id: "{{ target_player }}"
             data:
               shuffle: "{{ random_flag }}"
-
-          # Trigger Playback via Music Assistant
           - action: music_assistant.play_media
             target:
               entity_id: "{{ target_player }}"
@@ -299,7 +389,6 @@ action:
               media_type: "{{ media_type }}"
               enqueue: replace
 
-      # 4. SCENE ACTIVATION
       - conditions:
           - condition: template
             value_template: "{{ action_type == 'scene' and target_id != '' }}"
@@ -311,71 +400,96 @@ action:
 
 ---
 
-## 📚 Audiobookshelf, Series & Podcast Management
+## Audiobookshelf Integration & Multi-Room Routing
 
-### Multi-Room User Tokens
-Under **Readers & Zones** in the dashboard, assign a unique `abs_user_token` to each reader:
-- Player A (Child 1) and Player B (Child 2) can listen to the same series.
-- Child 1's progress advances independently without skipping chapters for Child 2.
+### Multi-Room Isolation
 
-### URI Formats Supported
-- **Audiobookshelf Series:** `audiobookshelf--<instance>://audiobook/<resolved_book_id>`
-- **Audiobookshelf Podcast Episode:** `audiobookshelf--<instance>://podcast_episode/<resolved_episode_id>`
-- **Music Assistant Native Podcast:** `library://podcast/<id>` with `extra_params: {"start_item": "latest"}`
-- **Music Assistant Albums/Playlists:** `library://album/<id>`, `library://playlist/<id>`
+In the **Readers & Zones** tab of the web dashboard, assign a distinct Audiobookshelf user token (`abs_user_token`) to each physical reader:
 
----
+- Multiple readers can trigger the same book or series tag simultaneously without progress interference.
+- Progress updates are committed to the designated user profile in Audiobookshelf.
 
-## 💻 Web Dashboard & Firmware Flasher
+### URI Structure Details
 
-Access the dashboard at `http://<ip>:5000`:
-- **NFC Tags:** View, search, edit, and assign actions, volumes, and playback options.
-- **Readers & Zones:** Assign readers to specific Home Assistant media players and Audiobookshelf user tokens.
-- **Live History:** Live WebSocket stream showing tag placements, removals, and executed actions.
-- **Test Simulator & ABS:** Test tag scanning virtually and browse Audiobookshelf libraries.
-- **Firmware & Flasher:** Select your hardware profile, enter your Wi-Fi credentials, and download a pre-configured `config.h` or ESPHome YAML file.
+- **Single Audiobooks:** `audiobookshelf--<instance>://audiobook/<item_id>`
+- **Series (Auto-Advanced):** `audiobookshelf--<instance>://audiobook/<resolved_book_id>`
+- **Podcasts (Episode Resolution):** `audiobookshelf--<instance>://podcast_episode/<podcast_id> <episode_id>`
+  - Music Assistant's provider unpacks the composite identifier to look up the episode within the specified podcast feed.
+- **Native Music Assistant Podcasts:** `library://podcast/<id>` with `extra_params: {"start_item": "latest"}`
 
 ---
 
-## 📡 REST API & WebSocket Reference
+## Web Dashboard & Management Interface
 
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| `GET`, `POST` | `/api/tags` | List all tags or add/update tags |
-| `GET`, `DELETE` | `/api/tags/{tag_id}` | Retrieve or delete a specific tag |
-| `GET`, `POST` | `/api/readers` | List or register hardware readers |
-| `GET` | `/api/firmware/templates` | Retrieve hardware profiles and pinout guides |
-| `GET` | `/api/firmware/generate-yaml` | Generate tailored `config.h` or ESPHome YAML |
-| `GET` | `/api/abs/series` | Search and list series from Audiobookshelf |
-| `GET` | `/api/abs/podcasts` | Search and list podcasts from Audiobookshelf |
-| `POST` | `/api/test/scan` | Simulate a scan or remove event via API |
-| `GET` | `/api/system/status` | Real-time health status of MQTT, ABS, and SQLite |
-| `GET` | `/api/system/logs` | In-memory container log viewer |
-| `WebSocket` | `/ws` | Real-time event feed |
+The built-in web management interface is available on port 5000 (`http://<host-ip>:5000`):
+
+- **Tag Management:** Provision aliases, bind media IDs, configure default playback volume, toggle shuffle, and enable the "Always start from beginning" flag.
+- **Bulk Maintenance:** Delete unconfigured auto-discovered tags in a single operation.
+- **Reader Assignment:** Bind hardware reader IDs to Home Assistant entity IDs (`media_player.*`) and dedicated Audiobookshelf tokens.
+- **Audiobookshelf Explorer:** Integrated browser and search tool for direct binding of books, series, and podcasts without manual ID copying.
+- **Firmware Builder & Flasher:** Web-based generator for custom `config.h` headers and ESPHome YAML configurations, including direct downloads of pre-compiled binaries.
+- **Real-Time Diagnostics:** WebSocket-powered event feed displaying raw scan events, routing calculations, and dispatched MQTT actions.
 
 ---
 
-## 🛠️ Local Development & Testing
+## REST API & WebSocket Reference
+
+### Tag Management
+
+- `GET /api/tags`: List all registered tags.
+- `POST /api/tags`: Create or update a tag mapping.
+- `GET /api/tags/{tag_id}`: Retrieve a specific tag by ID.
+- `DELETE /api/tags/{tag_id}`: Delete an individual tag.
+- `DELETE /api/tags/unconfigured`: Bulk delete all auto-discovered unconfigured tags.
+
+### Reader Management
+
+- `GET /api/readers`: List all configured readers and zone assignments.
+- `POST /api/readers`: Create or update a reader configuration.
+- `DELETE /api/readers/{reader_id}`: Remove a reader.
+
+### Audiobookshelf Endpoints
+
+- `GET /api/abs/status`: Check connection state and user profile validity.
+- `GET /api/abs/libraries`: List accessible libraries.
+- `GET /api/abs/series`: Query series list with optional search filter.
+- `GET /api/abs/podcasts`: Query podcast feeds.
+
+### Firmware & Profiles
+
+- `GET /api/firmware/templates`: Retrieve hardware pinout profiles and specifications.
+- `GET /api/firmware/generate-yaml`: Generate customized `config.h` or ESPHome YAML.
+- `GET /api/firmware/download-bin/{hardware_type}`: Download pre-compiled `.bin` firmware.
+- `GET /api/firmware/manifest/{hardware_type}`: ESP Web Tools manifest for browser-based USB flashing.
+
+### Diagnostics & Monitoring
+
+- `POST /api/test/scan`: Simulate an RFID scan or removal event via JSON payload.
+- `GET /api/history`: Retrieve recent scan and action logs.
+- `GET /api/system/status`: Connectivity status for MQTT, Audiobookshelf, and database.
+- `GET /api/system/logs`: In-memory log stream.
+- `WebSocket /ws`: Full-duplex real-time event distribution stream.
+
+---
+
+## Local Development & Verification
+
+Execute the automated test suite using Docker:
 
 ```bash
 # Clone the repository
 git clone https://github.com/Kl4V3/nfc-ha-media-controller.git
 cd nfc-ha-media-controller
 
-# Setup virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+# Run the complete test suite (48 automated test cases)
+docker run --rm -v $(pwd):/app -w /app nfc-test-nfc-media-controller pytest -v
 
-# Run the automated test suite (35 tests)
-pytest -v
-
-# Run local test container
+# Start the local development container
 docker compose up -d --build
 ```
 
 ---
 
-## 📄 License
+## License
 
 This project is licensed under the [MIT License](LICENSE).

@@ -55,21 +55,50 @@ spi:
   mosi_pin: GPIO23
   miso_pin: GPIO19
 
+# Status-Tracking zur zuverlässigen Entprellung (Toniebox Presence Logic)
+globals:
+  - id: current_tag_id
+    type: std::string
+    initial_value: '""'
+  - id: tag_is_present
+    type: bool
+    initial_value: 'false'
+
+# Asynchroner Debounce-Timer: Ignoriert kurze Leseaussetzer und stoppt erst nach 1200ms
+script:
+  - id: handle_tag_removed
+    mode: restart
+    then:
+      - delay: 1200ms
+      - lambda: |-
+          if (id(tag_is_present)) {
+            id(tag_is_present) = false;
+            std::string payload = "{\"tag_id\": \"" + id(current_tag_id) + "\", \"reader_id\": \"${reader_id}\", \"status\": \"removed\"}";
+            ESP_LOGI("RFID", "Tag sicher entfernt (Debounce): %s -> Sende Toniebox-Stop", id(current_tag_id).c_str());
+            id(mqtt_client).publish("rfid/scanned", payload);
+            id(current_tag_id) = "";
+          }
+
 # RC522 SPI RFID Reader
 rc522_spi:
   cs_pin: GPIO5
   reset_pin: GPIO22
-  update_interval: 300ms
+  update_interval: 250ms
   on_tag:
     then:
-      - lambda: |-
-          std::string payload = "{\"tag_id\": \"" + x + "\", \"reader_id\": \"${reader_id}\", \"status\": \"scanned\"}";
-          ESP_LOGI("RFID", "Tag scanned: %s -> Sende rfid/scanned (Play)", x.c_str());
-          id(mqtt_client).publish("rfid/scanned", payload);
+      - script.stop: handle_tag_removed
+      - if:
+          condition:
+            lambda: 'return !id(tag_is_present) || id(current_tag_id) != x;'
+          then:
+            - lambda: |-
+                id(tag_is_present) = true;
+                id(current_tag_id) = x;
+                std::string payload = "{\"tag_id\": \"" + x + "\", \"reader_id\": \"${reader_id}\", \"status\": \"scanned\"}";
+                ESP_LOGI("RFID", "Tag scanned: %s -> Sende rfid/scanned (Play)", x.c_str());
+                id(mqtt_client).publish("rfid/scanned", payload);
 
   on_tag_removed:
     then:
-      - lambda: |-
-          std::string payload = "{\"tag_id\": \"" + x + "\", \"reader_id\": \"${reader_id}\", \"status\": \"removed\"}";
-          ESP_LOGI("RFID", "Tag removed: %s -> Sende Toniebox-Stop", x.c_str());
-          id(mqtt_client).publish("rfid/scanned", payload);
+      - script.execute: handle_tag_removed
+

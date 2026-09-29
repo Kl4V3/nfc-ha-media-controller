@@ -112,3 +112,25 @@ def test_get_firmware_manifest(client):
     assert "name" in manifest
     assert "builds" in manifest
     assert manifest["home_assistant_domain"] == "esphome"
+
+
+def test_generate_firmware_m5atom_native_config(client):
+    res = client.get(
+        "/api/firmware/generate-yaml"
+        "?hardware_type=m5atom_lite_rfid_native"
+        "&reader_id=Wohnzimmer_NFC_Reader"
+        "&wifi_ssid=TestWiFi"
+        "&wifi_password=SecretPass"
+        "&mqtt_broker=192.168.1.50"
+        "&mqtt_port=1883"
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["hardware_type"] == "m5atom_lite_rfid_native"
+    assert data["filename"] == "config.h"
+    code = data["yaml"]
+    assert 'READER_ID          = "Wohnzimmer_NFC_Reader"' in code
+    assert 'WIFI_SSID       = "TestWiFi"' in code
+    assert 'MQTT_BROKER     = "192.168.1.50"' in code
+    assert 'MAX_MISSING_CYCLES = 3' in code
+

@@ -122,6 +122,10 @@
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                         {{ t("btn_add_tag") }}
                     </button>
+                    <button id="btn-delete-unconfigured" class="btn btn-outline-danger">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                        {{ t("btn_delete_unconfigured") }}
+                    </button>
                 </div>
             </div>
 
@@ -304,7 +308,8 @@
                         <label for="flasher-hw-select">{{ t("flasher_hw_profile") }}</label>
                         <select id="flasher-hw-select" class="form-select" style="font-size: 14px; font-weight: 500;">
                             <option value="esp32_pn5180" selected>⭐ ESP32 + PN5180 NFC (Toniebox Figures & ISO-15693 / ISO-14443)</option>
-                            <option value="m5atom_lite_rfid">M5Stack ATOM Lite + RFID 2 Unit (Grove I2C)</option>
+                            <option value="m5atom_lite_rfid_native">⭐ M5Stack ATOM Lite + RFID 2 Unit (Grove I2C - Custom Firmware)</option>
+                            <option value="m5atom_lite_rfid">M5Stack ATOM Lite + RFID 2 Unit (Grove I2C - ESPHome)</option>
                             <option value="esp32_pn532_i2c">ESP32 NodeMCU + PN532 NFC (I2C)</option>
                             <option value="esp32_rc522_spi">ESP32 NodeMCU + RC522 RFID (SPI)</option>
                         </select>
@@ -383,6 +388,9 @@
                             <div class="flasher-actions" style="margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap;">
                                 <button type="button" id="btn-download-yaml" class="btn btn-primary">
                                     {{ t("flasher_download_yaml") }}
+                                </button>
+                                <button type="button" id="btn-download-bin" class="btn btn-outline-primary" style="display: none;">
+                                    {{ t("flasher_download_bin") }}
                                 </button>
                                 <button type="button" id="btn-copy-yaml" class="btn btn-secondary">
                                     {{ t("flasher_copy_yaml") }}

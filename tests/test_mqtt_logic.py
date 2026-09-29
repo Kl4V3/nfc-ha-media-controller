@@ -69,7 +69,7 @@ def test_tag_removed_event(temp_env):
             "random": False,
             "extra_params": {},
             "metadata": {
-                "tag_id": "TAG_123"
+                "tag_id": "tag_123"
             }
         }
     )

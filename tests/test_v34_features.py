@@ -15,7 +15,7 @@ from app.main import app
 
 
 def test_version():
-    assert __version__ == "0.3.5"
+    assert __version__ == "0.3.6"
 
 
 def test_i18n_translations():
@@ -256,7 +256,7 @@ def test_mqtt_service_start_from_beginning_and_random_restrictions():
         })
 
         assert payload_abs_pod["media_type"] == "podcast"
-        assert payload_abs_pod["target_id"] == "audiobookshelf--xPQT49LN://podcast/pod-abs-1"
+        assert payload_abs_pod["target_id"] == "audiobookshelf--xPQT49LN://podcast_episode/pod-abs-1 ep-99"
         assert payload_abs_pod["metadata"]["title"] == "News Heute"
         assert payload_abs_pod["metadata"]["episode_id"] == "ep-99"
 
@@ -271,7 +271,7 @@ def test_api_podcasts_and_manifest():
     resp = client.get("/api/firmware/manifest/m5atom_lite_rfid")
     assert resp.status_code == 200
     manifest = resp.json()
-    assert manifest["version"] == "0.3.5"
+    assert manifest["version"] == "0.3.6"
 
     # ABS Podcasts endpoint
     with patch.object(app.state.abs_client, "get_podcast_list", return_value=[{"id": "p1", "title": "Podcast 1"}]):
