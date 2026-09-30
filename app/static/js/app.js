@@ -31,17 +31,26 @@ document.addEventListener("DOMContentLoaded", () => {
     let ws = null;
     let currentEditingTagId = null;
 
+    // DOM Elements - Theme Toggle
+    const btnThemeToggle = document.getElementById("btn-theme-toggle");
+    const themeSunIcon = document.getElementById("theme-sun-icon");
+    const themeMoonIcon = document.getElementById("theme-moon-icon");
+
     // DOM Elements - Status
     const elStatusMqtt = document.getElementById("status-mqtt");
     const elStatusAbs = document.getElementById("status-abs");
     const elStatusWs = document.getElementById("status-ws");
+    const elMobileDotMqtt = document.getElementById("mobile-dot-mqtt");
+    const elMobileDotAbs = document.getElementById("mobile-dot-abs");
+    const elMobileDotWs = document.getElementById("mobile-dot-ws");
 
     // DOM Elements - Tabs
     const tabButtons = document.querySelectorAll(".tab-btn");
     const tabPanes = document.querySelectorAll(".tab-pane");
 
-    // DOM Elements - Tags Table
+    // DOM Elements - Tags Table & Mobile Cards
     const elTagsTableBody = document.getElementById("tags-table-body");
+    const elTagsMobileList = document.getElementById("tags-mobile-list");
     const elTagsEmptyState = document.getElementById("tags-empty-state");
     const elTagsCount = document.getElementById("tags-count");
     const elSearchInput = document.getElementById("tags-search-input");
@@ -50,22 +59,27 @@ document.addEventListener("DOMContentLoaded", () => {
     const btnAddTag = document.getElementById("btn-add-tag");
     const btnDeleteUnconfigured = document.getElementById("btn-delete-unconfigured");
 
-    // DOM Elements - Readers Table
+    // DOM Elements - Readers Table & Mobile Cards
     const elReadersTableBody = document.getElementById("readers-table-body");
+    const elReadersMobileList = document.getElementById("readers-mobile-list");
     const elReadersEmptyState = document.getElementById("readers-empty-state");
     const elReadersCount = document.getElementById("readers-count");
     const btnAddReader = document.getElementById("btn-add-reader");
+
+    // DOM Elements - Mobile FAB
+    const btnMobileFab = document.getElementById("mobile-fab");
 
     // DOM Elements - History
     const elHistoryTableBody = document.getElementById("history-table-body");
     const btnRefreshHistory = document.getElementById("btn-refresh-history");
 
-    // DOM Elements - Live Banner
+    // DOM Elements - Live Toast Banner
     const elLiveBanner = document.getElementById("live-scan-banner");
     const elLiveEventType = document.getElementById("live-event-type");
     const elLiveTagName = document.getElementById("live-tag-name");
     const elLiveEventDetails = document.getElementById("live-event-details");
     const btnLiveEdit = document.getElementById("live-banner-edit-btn");
+    const btnCloseLiveToast = document.getElementById("btn-close-live-toast");
 
     // DOM Elements - Modals
     const elTagModal = document.getElementById("tag-modal");
@@ -138,8 +152,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const flasherMqttBroker = document.getElementById("flasher-mqtt-broker");
     const flasherMqttPort = document.getElementById("flasher-mqtt-port");
     const btnDownloadYaml = document.getElementById("btn-download-yaml");
+    const btnDownloadZip = document.getElementById("btn-download-zip");
     const btnDownloadBin = document.getElementById("btn-download-bin");
     const btnCopyYaml = document.getElementById("btn-copy-yaml");
+    const flasherStep2Title = document.getElementById("flasher-step2-title");
+    const flasherStep2Desc = document.getElementById("flasher-step2-desc");
+    const flasherPreviewTitle = document.getElementById("flasher-preview-title");
+    const flasherInstructionsEsphome = document.getElementById("flasher-instructions-esphome");
+    const flasherInstructionsPlatformio = document.getElementById("flasher-instructions-platformio");
     const flasherYamlPreview = document.getElementById("flasher-yaml-preview");
     const yamlFilenameBadge = document.getElementById("yaml-filename-badge");
     const flasherHwName = document.getElementById("flasher-hw-name");
@@ -149,8 +169,75 @@ document.addEventListener("DOMContentLoaded", () => {
     const flasherLedGuideList = document.getElementById("flasher-led-guide-list");
 
     // =========================================================================
+    // THEME TOGGLE & PERSISTENCE
+    // =========================================================================
+
+    function updateThemeIcons(theme) {
+        if (!themeSunIcon || !themeMoonIcon) return;
+        if (theme === "light") {
+            themeSunIcon.classList.remove("hidden");
+            themeMoonIcon.classList.add("hidden");
+        } else {
+            themeSunIcon.classList.add("hidden");
+            themeMoonIcon.classList.remove("hidden");
+        }
+    }
+
+    function initTheme() {
+        const savedTheme = localStorage.getItem("nfc_theme") || "dark";
+        if (savedTheme === "light") {
+            document.documentElement.classList.remove("dark");
+            document.documentElement.classList.add("light");
+        } else {
+            document.documentElement.classList.add("dark");
+            document.documentElement.classList.remove("light");
+        }
+        updateThemeIcons(savedTheme);
+    }
+
+    if (btnThemeToggle) {
+        btnThemeToggle.addEventListener("click", () => {
+            const isDark = document.documentElement.classList.contains("dark");
+            const newTheme = isDark ? "light" : "dark";
+            if (newTheme === "light") {
+                document.documentElement.classList.remove("dark");
+                document.documentElement.classList.add("light");
+            } else {
+                document.documentElement.classList.add("dark");
+                document.documentElement.classList.remove("light");
+            }
+            try {
+                localStorage.setItem("nfc_theme", newTheme);
+            } catch (e) {}
+            updateThemeIcons(newTheme);
+        });
+    }
+    initTheme();
+
+    // =========================================================================
     // INITIALIZATION & TAB NAVIGATION
     // =========================================================================
+
+    let currentActiveTab = "tags-tab";
+    function updateFabVisibility(tabId) {
+        if (!btnMobileFab) return;
+        currentActiveTab = tabId;
+        if (tabId === "tags-tab" || tabId === "readers-tab") {
+            btnMobileFab.classList.remove("hidden");
+        } else {
+            btnMobileFab.classList.add("hidden");
+        }
+    }
+
+    if (btnMobileFab) {
+        btnMobileFab.addEventListener("click", () => {
+            if (currentActiveTab === "tags-tab" && btnAddTag) {
+                btnAddTag.click();
+            } else if (currentActiveTab === "readers-tab" && btnAddReader) {
+                btnAddReader.click();
+            }
+        });
+    }
 
     tabButtons.forEach(btn => {
         btn.addEventListener("click", () => {
@@ -162,6 +249,8 @@ document.addEventListener("DOMContentLoaded", () => {
             if (targetTab) {
                 targetTab.classList.add("active");
             }
+
+            updateFabVisibility(btn.dataset.tab);
 
             if (btn.dataset.tab === "history-tab") {
                 loadHistory();
@@ -483,9 +572,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (data.mqtt.connected) {
                     elStatusMqtt.className = "status-indicator status-connected";
                     elStatusMqtt.querySelector(".label").textContent = `${t("status_mqtt_connected")}${data.mqtt.broker}`;
+                    if (elMobileDotMqtt) elMobileDotMqtt.className = "dot-sm dot-connected";
                 } else {
                     elStatusMqtt.className = "status-indicator status-disconnected";
                     elStatusMqtt.querySelector(".label").textContent = t("status_mqtt_disconnected");
+                    if (elMobileDotMqtt) elMobileDotMqtt.className = "dot-sm dot-disconnected";
                 }
 
                 // Populate Flasher MQTT Fields
@@ -499,9 +590,11 @@ document.addEventListener("DOMContentLoaded", () => {
                     elStatusAbs.className = "status-indicator status-connected";
                     const userLabel = data.audiobookshelf.username ? data.audiobookshelf.username : "Connected";
                     elStatusAbs.querySelector(".label").textContent = `ABS: ${userLabel}`;
+                    if (elMobileDotAbs) elMobileDotAbs.className = "dot-sm dot-connected";
                 } else {
                     elStatusAbs.className = "status-indicator status-unknown";
                     elStatusAbs.querySelector(".label").textContent = t("status_abs_unreachable");
+                    if (elMobileDotAbs) elMobileDotAbs.className = "dot-sm dot-unknown";
                 }
             }
         } catch (e) {
@@ -510,8 +603,32 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // =========================================================================
-    // TABLE RENDERING
+    // TABLE & MOBILE CARD RENDERING
     // =========================================================================
+
+    function getActionTypeBadge(type) {
+        if (!type || type.trim() === "") return `<span class="text-muted">—</span>`;
+        const safeType = escapeHtml(type.trim());
+        const cssType = safeType.toLowerCase();
+        return `<span class="badge-action-type type-${cssType}">${safeType}</span>`;
+    }
+
+    function getPlaybackBadge(tag) {
+        if (!tag.action_type) return `<span class="text-muted">—</span>`;
+        if (tag.action_type === "Serie" || tag.action_type === "Hoerbuch") {
+            if (tag.start_from_beginning) {
+                return `<span class="badge-playback badge-playback-start" title="${t("modal_start_from_beginning")}"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg> ${t("opt_from_start")}</span>`;
+            }
+            return `<span class="badge-playback badge-playback-resume" title="${t("opt_resume")}"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg> ${t("opt_resume")}</span>`;
+        }
+        if (["Album", "Playlist", "Custom"].includes(tag.action_type)) {
+            if (tag.random) {
+                return `<span class="badge-playback badge-playback-shuffle" title="${t("opt_shuffle")}"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg> ${t("opt_shuffle")}</span>`;
+            }
+            return `<span class="text-muted">—</span>`;
+        }
+        return `<span class="text-muted">—</span>`;
+    }
 
     function renderTagsTable() {
         const query = elSearchInput.value.toLowerCase().trim();
@@ -538,20 +655,21 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (filtered.length === 0) {
             elTagsTableBody.innerHTML = "";
+            if (elTagsMobileList) elTagsMobileList.innerHTML = "";
             elTagsEmptyState.classList.remove("hidden");
             return;
         }
 
         elTagsEmptyState.classList.add("hidden");
+
+        // Desktop Table Rows
         elTagsTableBody.innerHTML = filtered.map(tag => {
             const isUnconfigured = !tag.action_type || tag.action_type.trim() === "";
             const statusBadge = isUnconfigured
                 ? `<span class="badge badge-warning">${t("badge_unconfigured")}</span>`
                 : `<span class="badge badge-configured">${t("badge_ready")}</span>`;
 
-            const actionTypeBadge = tag.action_type && tag.action_type.trim() !== ""
-                ? `<span class="badge badge-type">${escapeHtml(tag.action_type)}</span>`
-                : `<span class="text-muted">—</span>`;
+            const actionTypeBadge = getActionTypeBadge(tag.action_type);
 
             const targetDisplay = (!isUnconfigured && tag.target_id)
                 ? `<span title="${escapeHtml(tag.target_id)}">${escapeHtml(truncate(tag.target_id, 28))}</span>`
@@ -561,17 +679,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 ? `<span class="text-muted">—</span>`
                 : (tag.volume !== null ? `${tag.volume}%` : `<span class="text-muted">${t("default")}</span>`);
 
-            // Playback Options column
-            let playbackDisplay = `<span class="text-muted">—</span>`;
-            if (tag.action_type === "Serie" || tag.action_type === "Hoerbuch") {
-                playbackDisplay = tag.start_from_beginning
-                    ? `<span class="badge badge-type" title="${t("modal_start_from_beginning")}">${t("opt_from_start")}</span>`
-                    : `<span class="text-muted" title="${t("opt_resume")}">${t("opt_resume")}</span>`;
-            } else if (["Album", "Playlist", "Custom"].includes(tag.action_type)) {
-                playbackDisplay = tag.random
-                    ? `<span class="badge badge-type">${t("opt_shuffle")}</span>`
-                    : `<span class="text-muted">—</span>`;
-            }
+            const playbackDisplay = getPlaybackBadge(tag);
 
             const lastScannedDisplay = tag.last_scanned ? formatDate(tag.last_scanned) : `<span class="text-muted">${t("never")}</span>`;
 
@@ -586,16 +694,87 @@ document.addEventListener("DOMContentLoaded", () => {
                     <td>${playbackDisplay}</td>
                     <td>${lastScannedDisplay}</td>
                     <td class="actions-cell">
-                        <button class="btn btn-sm btn-secondary" onclick="window.editTag('${escapeHtml(tag.tag_id)}')">
-                            ${t("btn_edit")}
+                        <button class="ghost-action-btn" onclick="window.editTag('${escapeHtml(tag.tag_id)}')" title="${t('btn_edit')}" aria-label="Edit">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                         </button>
-                        <button class="btn btn-sm btn-outline-danger" onclick="window.deleteTagConfirm('${escapeHtml(tag.tag_id)}')">
-                            🗑️
+                        <button class="ghost-action-btn btn-danger-ghost" onclick="window.deleteTagConfirm('${escapeHtml(tag.tag_id)}')" title="Delete" aria-label="Delete">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                         </button>
                     </td>
                 </tr>
             `;
         }).join("");
+
+        // Mobile Card Feed
+        if (elTagsMobileList) {
+            elTagsMobileList.innerHTML = filtered.map(tag => {
+                const isUnconfigured = !tag.action_type || tag.action_type.trim() === "";
+                const statusBadge = isUnconfigured
+                    ? `<span class="badge badge-warning">${t("badge_unconfigured")}</span>`
+                    : `<span class="badge badge-configured">${t("badge_ready")}</span>`;
+                const actionBadge = getActionTypeBadge(tag.action_type);
+                const playbackBadge = getPlaybackBadge(tag);
+                const lastScanned = tag.last_scanned ? formatDate(tag.last_scanned) : t("never");
+
+                // Target display: ONLY if configured and target_id exists!
+                const targetHtml = (!isUnconfigured && tag.target_id)
+                    ? `<div class="card-item-target" title="${escapeHtml(tag.target_id)}">
+                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+                         <span>${escapeHtml(truncate(tag.target_id, 36))}</span>
+                       </div>`
+                    : (isUnconfigured 
+                        ? `<div class="card-unconfigured-hint" onclick="window.editTag('${escapeHtml(tag.tag_id)}')">
+                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                             <span>${t("badge_unconfigured")} &bull; Tap to configure</span>
+                           </div>`
+                        : ``);
+
+                // Badges row: Action Type, Playback, and Volume (if applicable)
+                const hasPlayback = playbackBadge && !playbackBadge.includes("text-muted");
+                const hasAction = actionBadge && !actionBadge.includes("text-muted");
+                const volumeHtml = (!isUnconfigured && tag.volume !== null)
+                    ? `<span class="badge-volume"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg> ${tag.volume}%</span>`
+                    : "";
+
+                const badgesRowHtml = (hasAction || hasPlayback || volumeHtml)
+                    ? `<div class="card-badges-row">
+                         ${hasAction ? actionBadge : ""}
+                         ${hasPlayback ? playbackBadge : ""}
+                         ${volumeHtml}
+                       </div>`
+                    : "";
+
+                return `
+                    <div class="card-item">
+                        <div class="card-item-header">
+                            <div class="card-tag-identity">
+                                ${statusBadge}
+                                <span class="card-tag-id font-mono">${escapeHtml(formatTagId(tag.tag_id))}</span>
+                            </div>
+                            <div class="card-item-actions">
+                                <button class="touch-action-btn" onclick="window.editTag('${escapeHtml(tag.tag_id)}')" title="${t('btn_edit')}" aria-label="Edit">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                                </button>
+                                <button class="touch-action-btn btn-danger" onclick="window.deleteTagConfirm('${escapeHtml(tag.tag_id)}')" title="${t('btn_delete')}" aria-label="Delete">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-item-body">
+                            <div class="card-item-title">${escapeHtml(tag.alias || t("unnamed"))}</div>
+                            ${targetHtml}
+                            ${badgesRowHtml}
+                        </div>
+                        <div class="card-item-footer">
+                            <span class="card-footer-time">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                ${lastScanned}
+                            </span>
+                        </div>
+                    </div>
+                `;
+            }).join("");
+        }
     }
 
     function renderReadersTable() {
@@ -603,11 +782,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (readersList.length === 0) {
             elReadersTableBody.innerHTML = "";
+            if (elReadersMobileList) elReadersMobileList.innerHTML = "";
             elReadersEmptyState.classList.remove("hidden");
             return;
         }
 
         elReadersEmptyState.classList.add("hidden");
+
+        // Desktop Table Rows
         elReadersTableBody.innerHTML = readersList.map(reader => {
             const tokenBadge = reader.abs_user_token
                 ? `<span class="badge badge-configured" title="User-Token gesetzt">User-Token</span>`
@@ -624,16 +806,51 @@ document.addEventListener("DOMContentLoaded", () => {
                     <td>${tokenBadge}${prefixInfo}</td>
                     <td>${escapeHtml(reader.notes || "—")}</td>
                     <td class="actions-cell">
-                        <button class="btn btn-sm btn-secondary" onclick="window.editReader('${escapeHtml(reader.reader_id)}')">
-                            ${t("btn_edit")}
+                        <button class="ghost-action-btn" onclick="window.editReader('${escapeHtml(reader.reader_id)}')" title="${t('btn_edit')}" aria-label="Edit">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                         </button>
-                        <button class="btn btn-sm btn-outline-danger" onclick="window.deleteReaderConfirm('${escapeHtml(reader.reader_id)}')">
-                            🗑️
+                        <button class="ghost-action-btn btn-danger-ghost" onclick="window.deleteReaderConfirm('${escapeHtml(reader.reader_id)}')" title="Delete" aria-label="Delete">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                         </button>
                     </td>
                 </tr>
             `;
         }).join("");
+
+        // Mobile Card Feed
+        if (elReadersMobileList) {
+            elReadersMobileList.innerHTML = readersList.map(reader => {
+                const tokenBadge = reader.abs_user_token
+                    ? `<span class="badge badge-configured">User-Token</span>`
+                    : `<span class="badge badge-type text-muted">${t("default")}</span>`;
+                return `
+                    <div class="card-item">
+                        <div class="card-item-header">
+                            <span class="card-tag-id font-mono">${escapeHtml(reader.reader_id)}</span>
+                            <div class="card-item-actions">
+                                <button class="touch-action-btn" onclick="window.editReader('${escapeHtml(reader.reader_id)}')" title="${t('btn_edit')}" aria-label="Edit">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                                </button>
+                                <button class="touch-action-btn btn-danger" onclick="window.deleteReaderConfirm('${escapeHtml(reader.reader_id)}')" title="${t('btn_delete')}" aria-label="Delete">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-item-body">
+                            ${reader.notes ? `<div class="card-item-title">${escapeHtml(reader.notes)}</div>` : ""}
+                            <div class="card-item-target font-mono">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                                <span>${escapeHtml(reader.target_player)}</span>
+                            </div>
+                        </div>
+                        <div class="card-item-footer">
+                            <span class="card-footer-label">ABS Token:</span>
+                            <div>${tokenBadge}</div>
+                        </div>
+                    </div>
+                `;
+            }).join("");
+        }
     }
 
     function renderHistoryTable(items) {
@@ -1157,6 +1374,15 @@ document.addEventListener("DOMContentLoaded", () => {
     // WEBSOCKET & REALTIME EVENTS
     // =========================================================================
 
+    let liveToastTimeout = null;
+
+    if (btnCloseLiveToast) {
+        btnCloseLiveToast.addEventListener("click", () => {
+            if (elLiveBanner) elLiveBanner.classList.add("hidden");
+            if (liveToastTimeout) clearTimeout(liveToastTimeout);
+        });
+    }
+
     function connectWebSocket() {
         const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
         const wsUrl = `${protocol}//${window.location.host}/ws`;
@@ -1166,11 +1392,13 @@ document.addEventListener("DOMContentLoaded", () => {
         ws.onopen = () => {
             elStatusWs.className = "status-indicator status-connected";
             elStatusWs.querySelector(".label").textContent = t("status_ws_live");
+            if (elMobileDotWs) elMobileDotWs.className = "dot-sm dot-connected";
         };
 
         ws.onclose = () => {
             elStatusWs.className = "status-indicator status-disconnected";
             elStatusWs.querySelector(".label").textContent = "Offline";
+            if (elMobileDotWs) elMobileDotWs.className = "dot-sm dot-disconnected";
             setTimeout(connectWebSocket, 3000);
         };
 
@@ -1201,28 +1429,47 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function showLiveBanner(event) {
-        elLiveBanner.classList.remove("hidden");
+        if (!elLiveBanner) return;
+        if (liveToastTimeout) clearTimeout(liveToastTimeout);
+
+        elLiveBanner.classList.remove("hidden", "status-scanned", "status-warning", "status-removed");
         const displayTagId = formatTagId(event.tag_id);
+        const isDebug = (typeof window.IS_DEBUG !== "undefined" && window.IS_DEBUG) ||
+                        (window.APP_ENV === "test") ||
+                        (document.documentElement.getAttribute("data-env") === "test") ||
+                        document.documentElement.classList.contains("debug-mode");
+        const prefix = isDebug ? "[TEST EVENT] " : "";
+
         if (event.status === "removed") {
-            elLiveEventType.textContent = "REMOVED";
-            elLiveEventType.style.background = "#ef4444";
-            elLiveTagName.textContent = `Tag ${displayTagId} entfernt`;
-            elLiveEventDetails.textContent = `Stop an ${event.target_player}`;
+            elLiveBanner.classList.add("status-removed");
+            elLiveEventType.textContent = isDebug ? "[TEST] REMOVED" : "REMOVED";
+            elLiveEventType.style.background = "var(--status-danger)";
+            elLiveTagName.textContent = `${prefix}Tag ${displayTagId} removed`;
+            elLiveEventDetails.textContent = `Stop at ${event.target_player || "target player"}`;
             btnLiveEdit.classList.add("hidden");
+
+            // Auto-dismiss tag removal after 30 seconds (or manual dismiss via close button)
+            liveToastTimeout = setTimeout(() => {
+                elLiveBanner.classList.add("hidden");
+            }, 30000);
         } else if (event.status === "warning") {
-            elLiveEventType.textContent = "NEW TAG";
-            elLiveEventType.style.background = "#f59e0b";
-            elLiveTagName.textContent = `Tag: ${displayTagId}`;
-            elLiveEventDetails.textContent = `Reader: ${event.reader_id}. Warning sound triggered.`;
+            elLiveBanner.classList.add("status-warning");
+            elLiveEventType.textContent = isDebug ? "[TEST] UNKNOWN" : "NEW TAG";
+            elLiveEventType.style.background = "var(--status-warning)";
+            elLiveTagName.textContent = `${prefix}Tag: ${displayTagId}`;
+            elLiveEventDetails.textContent = `Reader: ${event.reader_id || "Reader"}. Unconfigured tag detected.`;
             btnLiveEdit.classList.remove("hidden");
             btnLiveEdit.onclick = () => window.editTag(event.tag_id);
+            // Stays permanently visible until manually closed or replaced by next scan
         } else {
-            elLiveEventType.textContent = "SCANNED";
-            elLiveEventType.style.background = "#10b981";
-            elLiveTagName.textContent = event.alias || `Tag ${displayTagId}`;
-            elLiveEventDetails.textContent = `${event.action_type || "Action"} -> ${event.target_player}`;
+            elLiveBanner.classList.add("status-scanned");
+            elLiveEventType.textContent = isDebug ? "[TEST] SCANNED" : "SCANNED";
+            elLiveEventType.style.background = "var(--status-success)";
+            elLiveTagName.textContent = `${prefix}${event.alias || ("Tag " + displayTagId)}`;
+            elLiveEventDetails.textContent = `${event.action_type || "Action"} -> ${event.target_player || "target player"}`;
             btnLiveEdit.classList.remove("hidden");
             btnLiveEdit.onclick = () => window.editTag(event.tag_id);
+            // Stays permanently visible until manually closed or replaced by next scan
         }
     }
 
@@ -1288,6 +1535,50 @@ document.addEventListener("DOMContentLoaded", () => {
         if (flasherHwName) flasherHwName.textContent = profile.name;
         if (flasherHwDesc) flasherHwDesc.textContent = profile.description;
 
+        const isPlatformIO = profile.framework === "platformio";
+
+        // Step 2 Titles & Descriptions
+        if (flasherStep2Title) {
+            flasherStep2Title.textContent = isPlatformIO 
+                ? t("flasher_step2_title_platformio", "2. Custom Firmware Configuration (config.h)")
+                : t("flasher_step2_title_esphome", "2. ESPHome Configuration (.yaml)");
+        }
+        if (flasherStep2Desc) {
+            flasherStep2Desc.textContent = isPlatformIO
+                ? t("flasher_step2_desc_platformio", "Dedicated C++ / PlatformIO firmware for Toniebox SLIX2 / native NFC presence. Settings are generated into config.h.")
+                : t("flasher_step2_desc_esphome", "Credentials from your Docker server are automatically inserted. Download the .yaml file or copy it for Home Assistant.");
+        }
+
+        if (flasherPreviewTitle) {
+            flasherPreviewTitle.textContent = isPlatformIO
+                ? t("flasher_preview_configh", "Generated config.h Preview:")
+                : t("flasher_preview_yaml", "Generated YAML Preview:");
+        }
+
+        if (btnDownloadYaml) {
+            btnDownloadYaml.textContent = isPlatformIO
+                ? t("flasher_download_configh", "Download config.h")
+                : t("flasher_download_yaml", "Download ESPHome YAML");
+        }
+
+        // Action Buttons Visibility
+        if (btnDownloadZip) {
+            btnDownloadZip.style.display = isPlatformIO ? "inline-flex" : "none";
+        }
+
+        // Download Bin Button visibility (esp32_pn5180, m5atom_lite_rfid, m5atom_lite_rfid_native)
+        if (btnDownloadBin) {
+            btnDownloadBin.style.display = (profile.id === "m5atom_lite_rfid" || profile.id === "m5atom_lite_rfid_native" || profile.id === "esp32_pn5180") ? "inline-flex" : "none";
+        }
+
+        // Step 3 Instructions Toggle
+        if (flasherInstructionsEsphome) {
+            flasherInstructionsEsphome.style.display = isPlatformIO ? "none" : "grid";
+        }
+        if (flasherInstructionsPlatformio) {
+            flasherInstructionsPlatformio.style.display = isPlatformIO ? "grid" : "none";
+        }
+
         // Render Pinout Table
         if (flasherPinoutTable) {
             if (profile.pinout && profile.pinout.length > 0) {
@@ -1323,11 +1614,6 @@ document.addEventListener("DOMContentLoaded", () => {
             } else {
                 flasherLedGuideSection.style.display = "none";
             }
-        }
-
-        // Download Bin Button visibility
-        if (btnDownloadBin) {
-            btnDownloadBin.style.display = (profile.id === "m5atom_lite_rfid" || profile.id === "m5atom_lite_rfid_native") ? "inline-flex" : "none";
         }
     }
 
@@ -1369,10 +1655,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 flasherYamlPreview.textContent = data.yaml;
                 if (yamlFilenameBadge) yamlFilenameBadge.textContent = data.filename;
             } else {
-                flasherYamlPreview.textContent = "# Could not generate YAML";
+                flasherYamlPreview.textContent = "# Could not generate configuration";
             }
         } catch (e) {
-            flasherYamlPreview.textContent = "# Error generating YAML";
+            flasherYamlPreview.textContent = "# Error generating configuration";
         }
     }
 
@@ -1395,10 +1681,26 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    if (btnDownloadZip) {
+        btnDownloadZip.addEventListener("click", () => {
+            const hwType = flasherHwSelect ? flasherHwSelect.value : "esp32_pn5180";
+            const readerId = flasherReaderIdInput ? (flasherReaderIdInput.value.trim() || "reader_box1") : "reader_box1";
+            const wifiSsid = flasherWifiSsid ? flasherWifiSsid.value.trim() : "";
+            const wifiPass = flasherWifiPass ? flasherWifiPass.value.trim() : "";
+
+            const params = new URLSearchParams();
+            if (readerId) params.append("reader_id", readerId);
+            if (wifiSsid) params.append("wifi_ssid", wifiSsid);
+            if (wifiPass) params.append("wifi_password", wifiPass);
+
+            window.location.href = `/api/firmware/download-zip/${hwType}?${params.toString()}`;
+        });
+    }
+
     if (btnDownloadBin) {
         btnDownloadBin.addEventListener("click", () => {
             const profile = getSelectedHardwareProfile();
-            const hw = profile ? profile.id : "m5atom_lite_rfid_native";
+            const hw = profile ? profile.id : "esp32_pn5180";
             window.location.href = `/api/firmware/download-bin/${hw}`;
         });
     }

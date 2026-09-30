@@ -139,6 +139,8 @@ async def serve_index(request: Request):
     config: AppConfig = request.app.state.config
     lang = getattr(config.server, "language", "en").lower()
     i18n_dict = get_translations(lang)
+    is_debug = getattr(config, "is_debug_mode", False)
+    app_env = "test" if is_debug else "production"
     return templates.TemplateResponse(
         request=request,
         name="index.html",
@@ -146,6 +148,8 @@ async def serve_index(request: Request):
             "config": config,
             "version": __version__,
             "lang": lang,
+            "is_debug_mode": is_debug,
+            "app_env": app_env,
             "t": lambda k, default="": i18n_dict.get(k, default or k),
             "i18n": i18n_dict
         }

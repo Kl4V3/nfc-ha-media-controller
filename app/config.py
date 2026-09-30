@@ -37,6 +37,7 @@ class ServerConfig(BaseModel):
     port: int = Field(default=5000)
     log_level: str = Field(default="INFO")
     language: str = Field(default="en")  # "en" (default) or "de"
+    environment: str = Field(default="production")  # "production" or "test"
 
 
 class AppConfig(BaseModel):
@@ -45,6 +46,14 @@ class AppConfig(BaseModel):
     media: MediaConfig = Field(default_factory=MediaConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
     database_path: str = Field(default="/app/data/database.db")
+
+    @property
+    def is_debug_mode(self) -> bool:
+        """Determines if the application runs in test / debug mode (Crimson theme)."""
+        env = (self.server.environment or "").strip().lower()
+        log_level = (self.server.log_level or "").strip().upper()
+        debug_flag = os.getenv("DEBUG", "").strip().lower() in ("true", "1", "yes")
+        return env in ("test", "testing", "dev", "development", "debug") or log_level == "DEBUG" or debug_flag
 
 
 def find_config_file() -> Optional[Path]:
@@ -156,6 +165,12 @@ def load_config(config_path: Optional[str] = None) -> AppConfig:
             pass
     if os.getenv("LOG_LEVEL"):
         config.server.log_level = os.getenv("LOG_LEVEL")
+
+    env_override = os.getenv("ENVIRONMENT") or os.getenv("APP_ENV") or os.getenv("ENV")
+    if env_override:
+        config.server.environment = env_override.strip().lower()
+    elif "environment" in config_dict:
+        config.server.environment = str(config_dict["environment"]).strip().lower()
 
     lang_override = (
         os.getenv("UI_LANGUAGE")

@@ -24,8 +24,8 @@ from app.main import app
 
 
 def test_version_v36():
-    """Verify system version is bumped to 0.3.6."""
-    assert __version__ == "0.3.6"
+    """Verify system version is bumped to 0.4.0."""
+    assert __version__ == "0.4.0"
 
 
 # -----------------------------------------------------------------------------

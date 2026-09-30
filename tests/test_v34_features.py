@@ -15,7 +15,7 @@ from app.main import app
 
 
 def test_version():
-    assert __version__ == "0.3.6"
+    assert __version__ == "0.4.0"
 
 
 def test_i18n_translations():
@@ -271,7 +271,7 @@ def test_api_podcasts_and_manifest():
     resp = client.get("/api/firmware/manifest/m5atom_lite_rfid")
     assert resp.status_code == 200
     manifest = resp.json()
-    assert manifest["version"] == "0.3.6"
+    assert manifest["version"] == "0.4.0"
 
     # ABS Podcasts endpoint
     with patch.object(app.state.abs_client, "get_podcast_list", return_value=[{"id": "p1", "title": "Podcast 1"}]):

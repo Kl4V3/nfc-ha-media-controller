@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="{{ lang }}">
+<html lang="{{ lang }}" class="dark{% if is_debug_mode %} debug-mode{% endif %}" data-env="{{ app_env }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,9 +7,28 @@
     <meta name="description" content="{{ t("app_description") }}">
     <link rel="icon" type="image/x-icon" href="/static/img/favicon.ico">
     <link rel="icon" type="image/png" href="/static/img/favicon.png">
+    
+    <!-- Preconnect & Typography: Ubuntu + JetBrains Mono -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Ubuntu:ital,wght@0,300;0,400;0,500;0,700;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    
+    <!-- Zero-FOUC Theme Pre-Hydration -->
+    <script>
+        (function() {
+            try {
+                var savedTheme = localStorage.getItem("nfc_theme");
+                if (savedTheme === "light") {
+                    document.documentElement.classList.remove("dark");
+                    document.documentElement.classList.add("light");
+                } else {
+                    document.documentElement.classList.add("dark");
+                    document.documentElement.classList.remove("light");
+                }
+            } catch (e) {}
+        })();
+    </script>
+    
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
@@ -28,43 +47,93 @@
                 </div>
                 <div class="brand-text">
                     <h1>{{ t("app_title") }}</h1>
-                    <span class="version-badge">v{{ version }}</span>
+                    <div class="brand-meta">
+                        <span class="version-badge">v{{ version }}</span>
+                        {% if is_debug_mode %}
+                        <span class="badge badge-debug" title="Test Environment: Crimson theme active">TEST / DEBUG MODE</span>
+                        {% endif %}
+                    </div>
                 </div>
             </div>
 
-            <div class="header-status">
-                <div id="status-mqtt" class="status-indicator status-disconnected" title="MQTT Broker Status">
-                    <span class="dot"></span>
-                    <span class="label">{{ t("status_mqtt_connecting") }}</span>
+            <div class="header-controls">
+                <!-- Mobile Compact Status Dots (< 640px) -->
+                <div class="mobile-status-dots" title="System Status: MQTT, ABS, Live">
+                    <span id="mobile-dot-mqtt" class="dot-sm dot-disconnected" title="MQTT Broker"></span>
+                    <span id="mobile-dot-abs" class="dot-sm dot-unknown" title="Audiobookshelf"></span>
+                    <span id="mobile-dot-ws" class="dot-sm dot-disconnected" title="WebSocket Live-Feed"></span>
                 </div>
-                <div id="status-abs" class="status-indicator status-unknown" title="Audiobookshelf Status">
-                    <span class="dot"></span>
-                    <span class="label">{{ t("status_abs_checking") }}</span>
+
+                <!-- Desktop Status Indicators (>= 640px) -->
+                <div class="header-status-desktop">
+                    <div id="status-mqtt" class="status-indicator status-disconnected" title="MQTT Broker Status">
+                        <span class="dot"></span>
+                        <span class="label">{{ t("status_mqtt_connecting") }}</span>
+                    </div>
+                    <div id="status-abs" class="status-indicator status-unknown" title="Audiobookshelf Status">
+                        <span class="dot"></span>
+                        <span class="label">{{ t("status_abs_checking") }}</span>
+                    </div>
+                    <div id="status-ws" class="status-indicator status-disconnected" title="WebSocket Live-Feed">
+                        <span class="dot"></span>
+                        <span class="label">{{ t("status_ws_live") }}</span>
+                    </div>
                 </div>
-                <div id="status-ws" class="status-indicator status-disconnected" title="WebSocket Live-Feed">
-                    <span class="dot"></span>
-                    <span class="label">{{ t("status_ws_live") }}</span>
-                </div>
-                <button id="btn-open-logs" class="btn btn-sm btn-secondary" style="margin-left: 6px;">{{ t("btn_logs") }}</button>
+
+                <!-- Theme Toggle Button (Light / Dark) -->
+                <button id="btn-theme-toggle" class="theme-toggle-btn" aria-label="Toggle Theme" title="Toggle Light / Dark Mode">
+                    <!-- Sun Icon (shown in dark mode to switch to light) -->
+                    <svg id="theme-sun-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hidden">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                    <!-- Moon Icon (shown in light mode to switch to dark) -->
+                    <svg id="theme-moon-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                </button>
+
+                <!-- Logs Button -->
+                <button id="btn-open-logs" class="btn btn-secondary header-btn" title="{{ t("btn_logs") }}">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="4 17 10 11 4 5"></polyline>
+                        <line x1="12" y1="19" x2="20" y2="19"></line>
+                    </svg>
+                    <span class="hidden sm:inline">{{ t("btn_logs") }}</span>
+                </button>
             </div>
         </div>
     </header>
 
     <!-- Main Content Container -->
     <main class="app-main">
-        
-        <!-- Live Scan Banner (wird bei RFID-Scan hervorgehoben) -->
-        <section id="live-scan-banner" class="live-banner hidden">
-            <div class="live-banner-content">
-                <div class="live-pulse"></div>
-                <div class="live-info">
-                    <span class="live-tag-type" id="live-event-type">EVENT</span>
-                    <strong id="live-tag-name">{{ t("live_event_scanned") }}</strong>
-                    <span class="live-details" id="live-event-details">Details...</span>
+
+        <!-- In-Context Live Scan Banner -->
+        <div id="live-scan-banner" class="live-banner-card hidden" role="alert">
+            <div class="live-banner-inner">
+                <div class="live-banner-left">
+                    <div class="live-status-dot-pulse"></div>
+                    <div class="live-banner-info">
+                        <div class="live-banner-top">
+                            <span class="live-tag-badge" id="live-event-type">EVENT</span>
+                            <span class="live-banner-meta font-mono" id="live-event-details">Details...</span>
+                        </div>
+                        <div class="live-banner-title" id="live-tag-name">{{ t("live_event_scanned") }}</div>
+                    </div>
                 </div>
-                <button id="live-banner-edit-btn" class="btn btn-sm btn-primary">{{ t("btn_configure") }}</button>
+                <div class="live-banner-right">
+                    <button id="live-banner-edit-btn" class="btn btn-sm btn-primary">{{ t("btn_configure") }}</button>
+                    <button type="button" class="live-banner-close" id="btn-close-live-toast" aria-label="Close" title="Close">&times;</button>
+                </div>
             </div>
-        </section>
+        </div>
 
         <!-- Navigation Tabs -->
         <nav class="nav-tabs">
@@ -129,7 +198,7 @@
                 </div>
             </div>
 
-            <!-- Tags Table -->
+            <!-- Tags Table (Desktop & Tablet >= 640px) -->
             <div class="table-container">
                 <table class="data-table" id="tags-table">
                     <thead>
@@ -149,9 +218,15 @@
                         <!-- Filled by JavaScript -->
                     </tbody>
                 </table>
-                <div id="tags-empty-state" class="empty-state hidden">
-                    <p>{{ t("tags_empty") }}</p>
-                </div>
+            </div>
+
+            <!-- Tags Mobile Card Feed (< 640px) -->
+            <div id="tags-mobile-list" class="mobile-card-list">
+                <!-- Filled by JavaScript -->
+            </div>
+
+            <div id="tags-empty-state" class="empty-state hidden">
+                <p>{{ t("tags_empty") }}</p>
             </div>
         </section>
 
@@ -169,6 +244,7 @@
                 </button>
             </div>
 
+            <!-- Readers Table (Desktop & Tablet >= 640px) -->
             <div class="table-container">
                 <table class="data-table" id="readers-table">
                     <thead>
@@ -184,9 +260,15 @@
                         <!-- Filled by JavaScript -->
                     </tbody>
                 </table>
-                <div id="readers-empty-state" class="empty-state hidden">
-                    <p>{{ t("readers_empty") }}</p>
-                </div>
+            </div>
+
+            <!-- Readers Mobile Card Feed (< 640px) -->
+            <div id="readers-mobile-list" class="mobile-card-list">
+                <!-- Filled by JavaScript -->
+            </div>
+
+            <div id="readers-empty-state" class="empty-state hidden">
+                <p>{{ t("readers_empty") }}</p>
             </div>
         </section>
 
@@ -199,7 +281,7 @@
                 <button id="btn-refresh-history" class="btn btn-secondary btn-sm">{{ t("btn_refresh_history") }}</button>
             </div>
 
-            <div class="table-container">
+            <div class="table-container" style="display: block;">
                 <table class="data-table" id="history-table">
                     <thead>
                         <tr>
@@ -236,7 +318,7 @@
                         <form id="simulator-form">
                             <div class="form-group">
                                 <label for="sim-reader-id">{{ t("sim_reader_id") }}</label>
-                                <input type="text" id="sim-reader-id" class="form-input" placeholder="z. B. reader_kizi" required>
+                                <input type="text" id="sim-reader-id" class="form-input font-mono" placeholder="z. B. reader_kizi" required>
                             </div>
 
                             <div class="form-group">
@@ -244,7 +326,7 @@
                                 <input type="text" id="sim-tag-id" class="form-input font-mono" placeholder="z. B. 04A1B2C3D4" required>
                             </div>
 
-                            <div class="form-actions">
+                            <div class="form-actions" style="display: flex; gap: 10px; margin-top: 14px;">
                                 <button type="button" id="btn-sim-scan" class="btn btn-success">
                                     {{ t("sim_btn_place") }}
                                 </button>
@@ -254,8 +336,8 @@
                             </div>
                         </form>
 
-                        <div class="sim-result-box hidden" id="sim-result-container">
-                            <label>{{ t("sim_result_label") }}</label>
+                        <div class="sim-result-box hidden" id="sim-result-container" style="margin-top: 16px;">
+                            <label style="font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 6px; display: block;">{{ t("sim_result_label") }}</label>
                             <pre id="sim-result-output" class="code-block"></pre>
                         </div>
                     </div>
@@ -265,10 +347,10 @@
                 <div class="card">
                     <div class="card-header">
                         <h3>{{ t("abs_explorer_title") }}</h3>
-                        <div class="header-tab-switch">
-                            <button id="btn-abs-tab-series" class="btn btn-sm btn-primary">{{ t("abs_tab_series") }}</button>
-                            <button id="btn-abs-tab-items" class="btn btn-sm btn-secondary">{{ t("abs_tab_items") }}</button>
-                            <button id="btn-abs-tab-podcasts" class="btn btn-sm btn-secondary">{{ t("abs_tab_podcasts") }}</button>
+                        <div class="header-tab-switch" style="display: flex; gap: 6px;">
+                            <button id="btn-abs-tab-series" class="btn btn-xs btn-primary">{{ t("abs_tab_series") }}</button>
+                            <button id="btn-abs-tab-items" class="btn btn-xs btn-secondary">{{ t("abs_tab_items") }}</button>
+                            <button id="btn-abs-tab-podcasts" class="btn btn-xs btn-secondary">{{ t("abs_tab_podcasts") }}</button>
                         </div>
                     </div>
                     <div class="card-body">
@@ -281,7 +363,7 @@
                             </div>
                         </div>
 
-                        <div id="abs-content-list" class="abs-list-container">
+                        <div id="abs-content-list" class="abs-list-container" style="max-height: 380px; overflow-y: auto;">
                             <p class="text-muted text-center py-4">{{ t("abs_loading") }}</p>
                         </div>
                     </div>
@@ -296,10 +378,10 @@
         <section id="flasher-tab" class="tab-pane">
 
             <!-- 1. Hardware-Profil & Anschlussbelegung -->
-            <div class="card mb-4" style="margin-bottom: 20px;">
+            <div class="card">
                 <div class="card-header">
                     <h3>{{ t("flasher_step1_title") }}</h3>
-                    <span class="badge badge-primary">{{ t("flasher_step1_badge") }}</span>
+                    <span class="badge badge-configured">{{ t("flasher_step1_badge") }}</span>
                 </div>
                 <div class="card-body">
                     <p class="card-desc">{{ t("flasher_step1_desc") }}</p>
@@ -316,10 +398,10 @@
                     </div>
 
                     <!-- Hardware Info, Pinout & LED Details -->
-                    <div id="flasher-hw-info-card" style="margin-top: 16px; padding: 16px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-md);">
+                    <div id="flasher-hw-info-card" style="margin-top: 16px; padding: 16px; background: var(--background-50); border: 1px solid var(--border-color); border-radius: var(--radius-md);">
                         <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; margin-bottom: 8px;">
-                            <h4 id="flasher-hw-name" style="margin: 0; font-size: 15px; color: var(--text-primary);">M5Stack ATOM Lite + RFID 2 Unit</h4>
-                            <span id="flasher-hw-recommended-badge" class="badge badge-success">⭐ Recommended (Plug & Play)</span>
+                            <h4 id="flasher-hw-name" style="margin: 0; font-size: 15px; color: var(--text-main);">M5Stack ATOM Lite + RFID 2 Unit</h4>
+                            <span id="flasher-hw-recommended-badge" class="badge badge-configured">⭐ Recommended (Plug & Play)</span>
                         </div>
                         <p id="flasher-hw-desc" class="text-xs text-muted" style="margin-bottom: 14px;"></p>
 
@@ -337,18 +419,18 @@
                 </div>
             </div>
 
-            <!-- 2. ESPHome Konfiguration & Download -->
-            <div class="card mb-4" style="margin-bottom: 20px;">
+            <!-- 2. ESPHome / PlatformIO Konfiguration & Download -->
+            <div class="card">
                 <div class="card-header">
-                    <h3>{{ t("flasher_step2_title") }}</h3>
-                    <span class="badge badge-success">{{ t("flasher_step2_badge") }}</span>
+                    <h3 id="flasher-step2-title">{{ t("flasher_step2_title") }}</h3>
+                    <span class="badge badge-configured">{{ t("flasher_step2_badge") }}</span>
                 </div>
                 <div class="card-body">
-                    <p class="card-desc">{{ t("flasher_step2_desc") }}</p>
+                    <p id="flasher-step2-desc" class="card-desc">{{ t("flasher_step2_desc") }}</p>
 
                     <div class="grid-2-col" style="gap: 20px;">
                         <div>
-                            <h4 style="font-size: 14px; margin-bottom: 12px;">{{ t("flasher_configure_params") }}</h4>
+                            <h4 style="font-size: 14px; margin-bottom: 12px; color: var(--text-main);">{{ t("flasher_configure_params") }}</h4>
 
                             <div class="form-row-2">
                                 <div class="form-group">
@@ -389,6 +471,9 @@
                                 <button type="button" id="btn-download-yaml" class="btn btn-primary">
                                     {{ t("flasher_download_yaml") }}
                                 </button>
+                                <button type="button" id="btn-download-zip" class="btn btn-primary" style="display: none;">
+                                    {{ t("flasher_download_zip") }}
+                                </button>
                                 <button type="button" id="btn-download-bin" class="btn btn-outline-primary" style="display: none;">
                                     {{ t("flasher_download_bin") }}
                                 </button>
@@ -400,8 +485,8 @@
 
                         <div>
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                                <h4 style="font-size: 14px; margin: 0;">{{ t("flasher_preview_title") }}</h4>
-                                <span id="yaml-filename-badge" class="badge badge-secondary font-mono" style="font-size: 10px;">esphome_reader_atom_1.yaml</span>
+                                <h4 id="flasher-preview-title" style="font-size: 14px; margin: 0; color: var(--text-main);">{{ t("flasher_preview_title") }}</h4>
+                                <span id="yaml-filename-badge" class="badge badge-type font-mono" style="font-size: 10px;">esphome_reader_atom_1.yaml</span>
                             </div>
                             <pre id="flasher-yaml-preview" class="code-block" style="max-height: 280px; font-size: 11px; overflow-y: auto; white-space: pre-wrap;"></pre>
                         </div>
@@ -413,14 +498,15 @@
             <div class="card">
                 <div class="card-header">
                     <h3>{{ t("flasher_step3_title") }}</h3>
-                    <span class="badge badge-primary">{{ t("flasher_step3_badge") }}</span>
+                    <span class="badge badge-configured">{{ t("flasher_step3_badge") }}</span>
                 </div>
                 <div class="card-body">
-                    <div class="grid-3-col" style="gap: 16px;">
+                    <!-- ESPHome Instructions -->
+                    <div id="flasher-instructions-esphome" class="grid-3-col" style="gap: 16px;">
                         
                         <!-- Option A -->
-                        <div style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px;">
-                            <h4 style="font-size: 14px; margin-bottom: 8px; color: var(--accent-primary);">{{ t("flasher_method1_title") }}</h4>
+                        <div style="background: var(--background-50); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 16px;">
+                            <h4 style="font-size: 14px; margin-bottom: 8px; color: var(--primary-cta);">{{ t("flasher_method1_title") }}</h4>
                             <p class="text-xs text-muted" style="margin-bottom: 12px;">{{ t("flasher_method1_desc") }}</p>
                             <ol class="text-xs text-muted" style="padding-left: 16px; line-height: 1.6;">
                                 <li>{{ t("flasher_method1_step1")|safe }}</li>
@@ -431,8 +517,8 @@
                         </div>
 
                         <!-- Option B -->
-                        <div style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px;">
-                            <h4 style="font-size: 14px; margin-bottom: 8px; color: var(--accent-success);">{{ t("flasher_method2_title") }}</h4>
+                        <div style="background: var(--background-50); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 16px;">
+                            <h4 style="font-size: 14px; margin-bottom: 8px; color: var(--status-success);">{{ t("flasher_method2_title") }}</h4>
                             <p class="text-xs text-muted" style="margin-bottom: 12px;">{{ t("flasher_method2_desc") }}</p>
                             <ol class="text-xs text-muted" style="padding-left: 16px; line-height: 1.6;">
                                 <li>{{ t("flasher_method2_step1")|safe }}</li>
@@ -443,13 +529,50 @@
                         </div>
 
                         <!-- Option C -->
-                        <div style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px;">
-                            <h4 style="font-size: 14px; margin-bottom: 8px; color: var(--accent-warning);">{{ t("flasher_method3_title") }}</h4>
+                        <div style="background: var(--background-50); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 16px;">
+                            <h4 style="font-size: 14px; margin-bottom: 8px; color: var(--status-warning);">{{ t("flasher_method3_title") }}</h4>
                             <p class="text-xs text-muted" style="margin-bottom: 12px;">{{ t("flasher_method3_desc") }}</p>
                             <div class="code-block font-mono" style="font-size: 11px; padding: 8px; margin-bottom: 8px;">
                                 esphome run &lt;file&gt;.yaml
                             </div>
                             <p class="text-xs text-muted">{{ t("flasher_method3_note") }}</p>
+                        </div>
+
+                    </div>
+
+                    <!-- PlatformIO Instructions -->
+                    <div id="flasher-instructions-platformio" class="grid-3-col" style="gap: 16px; display: none;">
+                        
+                        <!-- Option A: VS Code & PlatformIO -->
+                        <div style="background: var(--background-50); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 16px;">
+                            <h4 style="font-size: 14px; margin-bottom: 8px; color: var(--primary-cta);">{{ t("flasher_pio_method1_title") }}</h4>
+                            <p class="text-xs text-muted" style="margin-bottom: 12px;">{{ t("flasher_pio_method1_desc") }}</p>
+                            <ol class="text-xs text-muted" style="padding-left: 16px; line-height: 1.6;">
+                                <li>{{ t("flasher_pio_method1_step1")|safe }}</li>
+                                <li>{{ t("flasher_pio_method1_step2")|safe }}</li>
+                                <li>{{ t("flasher_pio_method1_step3")|safe }}</li>
+                                <li>{{ t("flasher_pio_method1_step4")|safe }}</li>
+                            </ol>
+                        </div>
+
+                        <!-- Option B: PlatformIO CLI -->
+                        <div style="background: var(--background-50); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 16px;">
+                            <h4 style="font-size: 14px; margin-bottom: 8px; color: var(--status-success);">{{ t("flasher_pio_method2_title") }}</h4>
+                            <p class="text-xs text-muted" style="margin-bottom: 12px;">{{ t("flasher_pio_method2_desc") }}</p>
+                            <div class="code-block font-mono" style="font-size: 11px; padding: 8px; margin-bottom: 8px;">
+                                pio run -t upload
+                            </div>
+                            <p class="text-xs text-muted">{{ t("flasher_pio_method2_note") }}</p>
+                        </div>
+
+                        <!-- Option C: esptool / Precompiled Binary -->
+                        <div style="background: var(--background-50); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 16px;">
+                            <h4 style="font-size: 14px; margin-bottom: 8px; color: var(--status-warning);">{{ t("flasher_pio_method3_title") }}</h4>
+                            <p class="text-xs text-muted" style="margin-bottom: 12px;">{{ t("flasher_pio_method3_desc") }}</p>
+                            <div class="code-block font-mono" style="font-size: 11px; padding: 8px; margin-bottom: 8px;">
+                                esptool.py --chip esp32 write_flash 0x10000 firmware.bin
+                            </div>
+                            <p class="text-xs text-muted">{{ t("flasher_pio_method3_note") }}</p>
                         </div>
 
                     </div>
@@ -459,6 +582,14 @@
         </section>
 
     </main>
+
+    <!-- Mobile Floating Action Button (FAB) for + Add Tag / + Add Reader -->
+    <button id="mobile-fab" class="mobile-fab" aria-label="Add Item">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+        </svg>
+    </button>
 
     <!-- =======================================================================
          MODAL: TAG EDITIEREN / ERSTELLEN
@@ -473,18 +604,18 @@
             <form id="tag-form">
                 <div class="modal-body">
                     <div class="form-group">
-                        <label for="tag-id-input">{{ t("modal_tag_id") }} <span class="required">*</span></label>
+                        <label for="tag-id-input">{{ t("modal_tag_id") }} <span class="required" style="color: var(--status-danger);">*</span></label>
                         <input type="text" id="tag-id-input" class="form-input font-mono" placeholder="z. B. 04A1B2C3D4" required>
                     </div>
 
                     <div class="form-group">
-                        <label for="tag-alias-input">{{ t("modal_tag_alias") }} <span class="required">*</span></label>
+                        <label for="tag-alias-input">{{ t("modal_tag_alias") }} <span class="required" style="color: var(--status-danger);">*</span></label>
                         <input type="text" id="tag-alias-input" class="form-input" placeholder="z. B. Die drei ??? Kids" required>
                     </div>
 
                     <div class="form-row-2">
                         <div class="form-group">
-                            <label for="tag-action-type">{{ t("modal_action_type") }} <span class="required">*</span></label>
+                            <label for="tag-action-type">{{ t("modal_action_type") }} <span class="required" style="color: var(--status-danger);">*</span></label>
                             <select id="tag-action-type" class="form-select" required>
                                 <option value="">{{ t("modal_action_type_choose") }}</option>
                                 <option value="Serie">{{ t("type_series") }}</option>
@@ -506,7 +637,7 @@
 
                     <div class="form-group hidden" id="group-library-id">
                         <label for="tag-library-id">
-                            {{ t("modal_library_id") }} <span class="required">*</span>
+                            {{ t("modal_library_id") }} <span class="required" style="color: var(--status-danger);">*</span>
                             <small class="helper-text">{{ t("modal_library_helper") }}</small>
                         </label>
                         <input type="text" id="tag-library-id" class="form-input font-mono" placeholder="z. B. 79f6d5d2-50c9-4ce0-9fe4-edfcee4de854">
@@ -514,7 +645,7 @@
 
                     <div class="form-group">
                         <label for="tag-target-id">
-                            {{ t("modal_target_id") }} <span class="required">*</span>
+                            {{ t("modal_target_id") }} <span class="required" style="color: var(--status-danger);">*</span>
                             <small class="helper-text" id="target-id-helper">Target ID</small>
                         </label>
                         <div class="input-with-btn">
@@ -528,14 +659,14 @@
                     <!-- Integrierter ABS Schnell-Finder -->
                     <div id="modal-abs-picker-box" class="abs-modal-picker hidden">
                         <div class="abs-modal-picker-header">
-                            <div class="header-tab-switch">
+                            <div class="header-tab-switch" style="display: flex; gap: 4px;">
                                 <button type="button" id="btn-modal-abs-tab-series" class="btn btn-xs btn-primary">{{ t("abs_tab_series") }}</button>
                                 <button type="button" id="btn-modal-abs-tab-items" class="btn btn-xs btn-secondary">{{ t("abs_tab_items") }}</button>
                                 <button type="button" id="btn-modal-abs-tab-podcasts" class="btn btn-xs btn-secondary">{{ t("abs_tab_podcasts") }}</button>
                             </div>
-                            <button type="button" id="btn-close-modal-abs-picker" class="btn btn-xs btn-outline-secondary">✕ {{ t("btn_close") }}</button>
+                            <button type="button" id="btn-close-modal-abs-picker" class="btn btn-xs btn-secondary">✕ {{ t("btn_close") }}</button>
                         </div>
-                        <div class="search-box w-100 my-2">
+                        <div class="search-box w-100" style="margin: 8px 0;">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                             <input type="text" id="modal-abs-search-input" placeholder="{{ t('abs_search_placeholder') }}">
                         </div>
@@ -587,12 +718,12 @@
             <form id="reader-form">
                 <div class="modal-body">
                     <div class="form-group">
-                        <label for="reader-id-input">{{ t("modal_reader_id") }} <span class="required">*</span></label>
+                        <label for="reader-id-input">{{ t("modal_reader_id") }} <span class="required" style="color: var(--status-danger);">*</span></label>
                         <input type="text" id="reader-id-input" class="form-input font-mono" placeholder="z. B. reader_kizi" required>
                     </div>
 
                     <div class="form-group">
-                        <label for="reader-target-player">{{ t("modal_reader_target_player") }} <span class="required">*</span></label>
+                        <label for="reader-target-player">{{ t("modal_reader_target_player") }} <span class="required" style="color: var(--status-danger);">*</span></label>
                         <input type="text" id="reader-target-player" class="form-input font-mono" placeholder="z. B. media_player.kinderzimmer" required>
                     </div>
 
@@ -651,7 +782,7 @@
          ======================================================================= -->
     <div id="logs-modal" class="modal hidden">
         <div class="modal-backdrop"></div>
-        <div class="modal-dialog modal-lg" style="max-width: 900px; width: 95%;">
+        <div class="modal-dialog modal-lg">
             <div class="modal-header">
                 <h3>{{ t("logs_modal_title") }}</h3>
                 <button class="modal-close" data-close-modal>&times;</button>
@@ -676,6 +807,8 @@
     <script>
         window.APP_LANG = "{{ lang }}";
         window.I18N = {{ i18n | tojson }};
+        window.APP_ENV = "{{ app_env }}";
+        window.IS_DEBUG = {{ "true" if is_debug_mode else "false" }};
     </script>
     <script src="/static/js/app.js"></script>
 </body>

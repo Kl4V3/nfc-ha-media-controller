@@ -1,3 +1,4 @@
+import os
 import re
 import logging
 from pathlib import Path
@@ -771,15 +772,79 @@ def download_firmware_bin(hardware_type: str):
     from fastapi.responses import FileResponse
     bin_path = Path(__file__).parent.parent / "static" / "firmware" / hardware_type / "firmware.bin"
     if not bin_path.is_file():
-        pio_path = Path(__file__).parent.parent.parent / "firmware" / "m5atom_lite_rfid" / ".pio" / "build" / "m5stack-atom" / "firmware.bin"
-        if pio_path.is_file() and hardware_type in ["m5atom_lite_rfid", "m5atom_lite_rfid_native"]:
-            bin_path = pio_path
+        if hardware_type in ["m5atom_lite_rfid", "m5atom_lite_rfid_native"]:
+            pio_path = Path(__file__).parent.parent.parent / "firmware" / "m5atom_lite_rfid" / ".pio" / "build" / "m5stack-atom" / "firmware.bin"
+            if pio_path.is_file():
+                bin_path = pio_path
+        elif hardware_type == "esp32_pn5180":
+            pio_path = Path(__file__).parent.parent.parent / "firmware" / "esp32_pn5180" / ".pio" / "build" / "esp32dev" / "firmware.bin"
+            if pio_path.is_file():
+                bin_path = pio_path
         else:
             raise HTTPException(status_code=404, detail=f"Compiled firmware binary for {hardware_type} not found.")
+
+    if not bin_path or not bin_path.is_file():
+        raise HTTPException(status_code=404, detail=f"Compiled firmware binary for {hardware_type} not found.")
+
     return FileResponse(
         path=str(bin_path),
         media_type="application/octet-stream",
         filename=f"{hardware_type}_firmware.bin"
+    )
+
+
+@api_router.get("/firmware/download-zip/{hardware_type}")
+def download_firmware_zip(
+    request: Request,
+    hardware_type: str,
+    reader_id: Optional[str] = None,
+    wifi_ssid: Optional[str] = None,
+    wifi_password: Optional[str] = None
+):
+    """Packages the PlatformIO firmware directory into a .zip file with customized config.h."""
+    import zipfile
+    import io
+    from fastapi.responses import Response
+
+    if hardware_type not in FIRMWARE_TEMPLATES:
+        raise HTTPException(status_code=400, detail=f"Unbekannter Hardware-Typ: {hardware_type}")
+
+    fw_dir_name = "esp32_pn5180" if hardware_type == "esp32_pn5180" else ("m5atom_lite_rfid" if "m5atom" in hardware_type else None)
+    if not fw_dir_name:
+        raise HTTPException(status_code=400, detail=f"Source project not available for {hardware_type}")
+
+    src_dir = Path(__file__).parent.parent.parent / "firmware" / fw_dir_name
+    if not src_dir.is_dir():
+        raise HTTPException(status_code=404, detail="Firmware source directory not found")
+
+    yaml_resp = generate_firmware_yaml(
+        request=request,
+        hardware_type=hardware_type,
+        reader_id=reader_id,
+        wifi_ssid=wifi_ssid,
+        wifi_password=wifi_password,
+        download=False
+    )
+    custom_config_h = yaml_resp["yaml"]
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for root, dirs, files in os.walk(src_dir):
+            dirs[:] = [d for d in dirs if d not in [".pio", ".git", ".vscode", "__pycache__"]]
+            for file in files:
+                if file == "config.h":
+                    continue
+                file_path = Path(root) / file
+                rel_path = file_path.relative_to(src_dir)
+                zf.write(file_path, arcname=f"{fw_dir_name}/{rel_path}")
+
+        zf.writestr(f"{fw_dir_name}/include/config.h", custom_config_h)
+
+    zip_buffer.seek(0)
+    return Response(
+        content=zip_buffer.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{fw_dir_name}_configured.zip"'}
     )
 
 

@@ -1,7 +1,7 @@
 # NFC Media Controller
 
 [![Docker Image](https://img.shields.io/docker/v/theklave/nfc-ha-media-controller?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/theklave/nfc-ha-media-controller)
-[![Release](https://img.shields.io/badge/version-0.3.6-brightgreen.svg)](https://github.com/Kl4V3/nfc-ha-media-controller/releases)
+[![Release](https://img.shields.io/badge/version-0.4.0-brightgreen.svg)](https://github.com/Kl4V3/nfc-ha-media-controller/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg?logo=python)](https://www.python.org/)
 
@@ -72,6 +72,13 @@ The system enforces deterministic physical presence playback: placing an assigne
 
 ## Core Capabilities
 
+- **Modern Design System & Responsive Ergonomics (v0.4.0):**
+  - Modern typography hierarchy powered by **Ubuntu** and **JetBrains Mono**.
+  - **Dual-Theme Environment Awareness:** Clean Emerald/Mint palette for production environments vs. high-contrast Crimson Noir palette for testing/debug setups.
+  - Zero-FOUC Dark/Light Mode toggle persisted in browser `localStorage` with Dark Mode as default.
+  - 3-tier responsive layout: Single-column mobile card feed with thumb-zone ergonomics, minimum $44 \times 44\text{px}$ touch targets, and a mobile Floating Action Button (FAB).
+  - In-context Live Scan Hero Banner: Integrated seamlessly above the navigation tabs with live pulsing status indicators. Placement events persist until removed or dismissed; removal events auto-dismiss after 30 seconds.
+  - Top 3px hazard stripe and prominent `TEST / DEBUG MODE` badges when running with `ENVIRONMENT=test` or `LOG_LEVEL=DEBUG`.
 - **Deterministic Physical Presence Playback:**
   - **Tag Placed (`scanned`):** Resolves assigned media and dispatches playback commands to the target player.
   - **Tag Removed (`removed`):** Immediately issues a stop action (`media_player.media_stop`) with playlist clearing.
@@ -185,6 +192,7 @@ services:
       - MQTT_PORT=1883
       - MQTT_USER=your_mqtt_user
       - MQTT_PASSWORD=your_mqtt_password
+      - MQTT_CLIENT_ID=nfc_media_middleware
       - MQTT_TOPIC_SCANNED=rfid/scanned
       - MQTT_TOPIC_ACTION=rfid/action
       # Audiobookshelf Server Connectivity
@@ -192,6 +200,7 @@ services:
       - ABS_DEFAULT_TOKEN=your_api_token
       - MASS_ABS_INSTANCE_ID=xPQT49LN
       # System Configuration
+      - ENVIRONMENT=production # Options: "production" or "test" (Crimson debug theme)
       - UI_LANGUAGE=en # Options: "en" or "de"
       - LOG_LEVEL=INFO
 ```
@@ -200,10 +209,12 @@ services:
 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
+| `ENVIRONMENT` | Operational environment (`production` or `test`). Setting to `test` activates the Crimson Noir theme, top hazard stripe, and debug badges | `production` |
 | `MQTT_BROKER` | Hostname or IP of the MQTT broker | `192.168.1.50` |
 | `MQTT_PORT` | MQTT broker port | `1883` |
 | `MQTT_USER` | MQTT authentication username | `""` |
 | `MQTT_PASSWORD` | MQTT authentication password | `""` |
+| `MQTT_CLIENT_ID` | Unique client identifier registered on the MQTT broker | `nfc_media_middleware` |
 | `MQTT_TOPIC_SCANNED` | Inbound MQTT topic for reader scan events | `rfid/scanned` |
 | `MQTT_TOPIC_ACTION` | Outbound MQTT topic for normalized controller actions | `rfid/action` |
 | `ABS_BASE_URL` | Base URL of the Audiobookshelf instance | `""` |
@@ -460,6 +471,7 @@ The built-in web management interface is available on port 5000 (`http://<host-i
 - `GET /api/firmware/templates`: Retrieve hardware pinout profiles and specifications.
 - `GET /api/firmware/generate-yaml`: Generate customized `config.h` or ESPHome YAML.
 - `GET /api/firmware/download-bin/{hardware_type}`: Download pre-compiled `.bin` firmware.
+- `GET /api/firmware/download-zip/{hardware_type}`: Download complete PlatformIO project archive (.zip) with injected configuration.
 - `GET /api/firmware/manifest/{hardware_type}`: ESP Web Tools manifest for browser-based USB flashing.
 
 ### Diagnostics & Monitoring
@@ -474,15 +486,15 @@ The built-in web management interface is available on port 5000 (`http://<host-i
 
 ## Local Development & Verification
 
-Execute the automated test suite using Docker:
+Execute the automated test suite using pytest or Docker:
 
 ```bash
 # Clone the repository
 git clone https://github.com/Kl4V3/nfc-ha-media-controller.git
 cd nfc-ha-media-controller
 
-# Run the complete test suite (48 automated test cases)
-docker run --rm -v $(pwd):/app -w /app nfc-test-nfc-media-controller pytest -v
+# Run the complete test suite (57 automated test cases)
+pytest -v
 
 # Start the local development container
 docker compose up -d --build

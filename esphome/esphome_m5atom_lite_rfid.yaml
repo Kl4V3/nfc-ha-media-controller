@@ -29,7 +29,7 @@ esphome:
   friendly_name: ${friendly_name}
   project:
     name: "kl4v3.m5atom-nfc-reader"
-    version: "0.3.6"
+    version: "0.4.0"
   on_boot:
     priority: 600
     then:

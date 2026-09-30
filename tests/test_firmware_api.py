@@ -134,3 +134,56 @@ def test_generate_firmware_m5atom_native_config(client):
     assert 'MQTT_BROKER     = "192.168.1.50"' in code
     assert 'MAX_MISSING_CYCLES = 3' in code
 
+
+def test_download_esp32_pn5180_bin(client):
+    res = client.get("/api/firmware/download-bin/esp32_pn5180")
+    assert res.status_code == 200
+    assert "application/octet-stream" in res.headers["content-type"]
+    assert len(res.content) > 100000
+
+
+def test_download_firmware_zip(client):
+    res = client.get(
+        "/api/firmware/download-zip/esp32_pn5180"
+        "?reader_id=reader_kids"
+        "&wifi_ssid=KidsWiFi"
+        "&wifi_password=Secret123"
+    )
+    assert res.status_code == 200
+    assert "application/zip" in res.headers["content-type"]
+    assert "esp32_pn5180_configured.zip" in res.headers.get("content-disposition", "")
+    
+    import zipfile
+    import io
+    with zipfile.ZipFile(io.BytesIO(res.content), "r") as zf:
+        namelist = zf.namelist()
+        assert "esp32_pn5180/platformio.ini" in namelist
+        assert "esp32_pn5180/include/config.h" in namelist
+        config_h = zf.read("esp32_pn5180/include/config.h").decode("utf-8")
+        assert 'WIFI_SSID       = "KidsWiFi"' in config_h
+        assert 'READER_ID          = "reader_kids"' in config_h
+
+
+def test_download_m5atom_firmware_zip(client):
+    res = client.get(
+        "/api/firmware/download-zip/m5atom_lite_rfid_native"
+        "?reader_id=reader_atom"
+        "&wifi_ssid=AtomWiFi"
+        "&wifi_password=AtomSecret"
+    )
+    assert res.status_code == 200
+    assert "application/zip" in res.headers["content-type"]
+    assert "m5atom_lite_rfid_configured.zip" in res.headers.get("content-disposition", "")
+    
+    import zipfile
+    import io
+    with zipfile.ZipFile(io.BytesIO(res.content), "r") as zf:
+        namelist = zf.namelist()
+        assert "m5atom_lite_rfid/platformio.ini" in namelist
+        assert "m5atom_lite_rfid/include/config.h" in namelist
+        config_h = zf.read("m5atom_lite_rfid/include/config.h").decode("utf-8")
+        assert 'WIFI_SSID       = "AtomWiFi"' in config_h
+        assert 'READER_ID          = "reader_atom"' in config_h
+
+
+
