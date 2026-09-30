@@ -378,7 +378,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 setModalAbsTab("series");
             }
             loadModalAbsContent();
-            inputModalAbsSearch.focus();
+            setTimeout(() => {
+                elModalAbsPickerBox.scrollIntoView({ behavior: "smooth", block: "start" });
+                inputModalAbsSearch.focus();
+            }, 100);
         } else {
             elModalAbsPickerBox.classList.add("hidden");
         }
@@ -475,12 +478,12 @@ document.addEventListener("DOMContentLoaded", () => {
             }
 
             return `
-                <div class="abs-series-item py-1">
-                    <div style="max-width: 70%;">
-                        <div class="abs-series-title text-xs"><strong>${escapeHtml(title)}</strong></div>
-                        <div class="abs-series-meta font-mono" style="font-size: 10px;">${escapeHtml(meta)}</div>
+                <div class="abs-series-item" onclick="window.applyModalAbsItem('${escapeHtml(item.id)}')">
+                    <div style="flex: 1; min-width: 0; padding-right: 8px;">
+                        <div class="abs-series-title text-xs" style="font-weight: 600; color: var(--text-main); word-break: break-word;">${escapeHtml(title)}</div>
+                        <div class="abs-series-meta font-mono text-muted" style="font-size: 11px; margin-top: 2px;">${escapeHtml(meta)}</div>
                     </div>
-                    <button type="button" class="btn btn-xs btn-primary" onclick="window.applyModalAbsItem('${escapeHtml(item.id)}')">
+                    <button type="button" class="btn btn-xs btn-primary" onclick="event.stopPropagation(); window.applyModalAbsItem('${escapeHtml(item.id)}')" style="flex-shrink: 0; min-height: 32px; padding: 4px 10px;">
                         ${t("abs_btn_apply")}
                     </button>
                 </div>
@@ -512,13 +515,23 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         elModalAbsPickerBox.classList.add("hidden");
         
+        // Dismiss mobile keyboard by blurring search input
+        if (inputModalAbsSearch) {
+            inputModalAbsSearch.blur();
+        }
+
         // Highlight Effect
-        inputTagTargetId.style.borderColor = "#10b981";
-        if (inputTagLibraryId) inputTagLibraryId.style.borderColor = "#10b981";
+        inputTagTargetId.style.borderColor = "var(--primary-cta)";
+        if (inputTagLibraryId) inputTagLibraryId.style.borderColor = "var(--primary-cta)";
         setTimeout(() => { 
             inputTagTargetId.style.borderColor = ""; 
             if (inputTagLibraryId) inputTagLibraryId.style.borderColor = "";
         }, 1200);
+
+        // Smooth scroll to Target ID so user immediately sees the populated values and Save button
+        setTimeout(() => {
+            inputTagTargetId.scrollIntoView({ behavior: "smooth", block: "center" });
+        }, 80);
     };
 
     // =========================================================================
