@@ -86,13 +86,22 @@ void addLog(const String& msg) {
 // HILFSFUNKTIONEN
 // ============================================================================
 
-String formatUid(const uint8_t* uid, size_t length) {
+String formatUid(const uint8_t* uid, size_t length, bool reverse = false) {
   String result = "";
-  for (int i = (int)length - 1; i >= 0; i--) {
-    if (uid[i] < 0x10) {
-      result += "0";
+  if (reverse) {
+    for (int i = (int)length - 1; i >= 0; i--) {
+      if (uid[i] < 0x10) {
+        result += "0";
+      }
+      result += String(uid[i], HEX);
     }
-    result += String(uid[i], HEX);
+  } else {
+    for (size_t i = 0; i < length; i++) {
+      if (uid[i] < 0x10) {
+        result += "0";
+      }
+      result += String(uid[i], HEX);
+    }
   }
   result.toLowerCase();
   return result;
@@ -165,21 +174,53 @@ void publishTagRemoved(const String& uid) {
 }
 
 // ============================================================================
-// ABSOLUT ROBUSTE NON-BLOCKING TRANSCEIVE ENGINE
+// MULTI-PROTOKOLL MANAGEMENT (ISO-15693 Tonies & ISO-14443A NTAG213)
 // ============================================================================
 
-bool transceiveRaw(const uint8_t* cmd, size_t cmdLen, uint8_t* outBuf, uint16_t* outLen, uint16_t maxLen, uint32_t* debugIrq = NULL) {
+enum NfcProtocol {
+  PROTO_ISO15693 = 0,
+  PROTO_ISO14443A = 1
+};
+
+NfcProtocol currentRfProtocol = PROTO_ISO15693; // Default nach setupRF()
+NfcProtocol activeTagProtocol = PROTO_ISO15693;
+
+bool switchToIso15693() {
+  if (currentRfProtocol == PROTO_ISO15693) return true;
+  if (!nfc15693.loadRFConfig(0x0D, 0x8D)) {
+    return false;
+  }
+  currentRfProtocol = PROTO_ISO15693;
+  delayMicroseconds(500);
+  return true;
+}
+
+bool switchToIso14443A() {
+  if (currentRfProtocol == PROTO_ISO14443A) return true;
+  if (!nfc15693.loadRFConfig(0x00, 0x80)) {
+    return false;
+  }
+  currentRfProtocol = PROTO_ISO14443A;
+  delayMicroseconds(500);
+  return true;
+}
+
+// ============================================================================
+// ABSOLUT ROBUSTE NON-BLOCKING TRANSCEIVE ENGINE (ISO-15693)
+// ============================================================================
+
+bool transceiveRaw(const uint8_t* cmd, size_t cmdLen, uint8_t* outBuf, uint16_t* outLen, uint16_t maxLen, uint32_t* debugIrq = NULL, uint16_t timeoutMs = 60) {
   nfc15693.clearIRQStatus(0xFFFFFFFF);
 
   if (!nfc15693.sendData((uint8_t*)cmd, cmdLen)) {
     return false;
   }
 
-  // Warten auf RX_IRQ mit 60ms Timeout (EEPROM-Unlock-Sicherheit)
+  // Warten auf RX_IRQ mit konfigurierbarem Timeout (Standard 60ms für EEPROM-Unlock)
   unsigned long start = millis();
   uint32_t irqStatus = 0;
 
-  while (millis() - start < 60) {
+  while (millis() - start < timeoutMs) {
     irqStatus = nfc15693.getIRQStatus();
     if (irqStatus & RX_IRQ_STAT) {
       break;
@@ -225,15 +266,12 @@ bool transceiveRaw(const uint8_t* cmd, size_t cmdLen, uint8_t* outBuf, uint16_t*
 /**
  * Standard ISO-15693 Inventory (0x26, 0x01, 0x00)
  */
-/**
- * Standard ISO-15693 Inventory (0x26, 0x01, 0x00)
- */
 bool safeInventory(uint8_t* outUid) {
   uint8_t invDual[] = { 0x26, 0x01, 0x00 };
   uint8_t rxBuf[32];
   uint16_t rxLen = 0;
 
-  if (transceiveRaw(invDual, sizeof(invDual), rxBuf, &rxLen, sizeof(rxBuf))) {
+  if (transceiveRaw(invDual, sizeof(invDual), rxBuf, &rxLen, sizeof(rxBuf), NULL, 15)) {
     if (rxLen >= 10 && (rxBuf[0] & 0x01) == 0) {
       memcpy(outUid, &rxBuf[2], 8);
       return true;
@@ -241,7 +279,7 @@ bool safeInventory(uint8_t* outUid) {
   }
 
   uint8_t invSingle[] = { 0x22, 0x01, 0x00 };
-  if (transceiveRaw(invSingle, sizeof(invSingle), rxBuf, &rxLen, sizeof(rxBuf))) {
+  if (transceiveRaw(invSingle, sizeof(invSingle), rxBuf, &rxLen, sizeof(rxBuf), NULL, 15)) {
     if (rxLen >= 10 && (rxBuf[0] & 0x01) == 0) {
       memcpy(outUid, &rxBuf[2], 8);
       return true;
@@ -259,7 +297,7 @@ bool safeGetSysInfo(uint8_t* outUid) {
   uint8_t rxBuf[32];
   uint16_t rxLen = 0;
 
-  if (transceiveRaw(sysInfo, sizeof(sysInfo), rxBuf, &rxLen, sizeof(rxBuf))) {
+  if (transceiveRaw(sysInfo, sizeof(sysInfo), rxBuf, &rxLen, sizeof(rxBuf), NULL, 15)) {
     if (rxLen >= 10 && (rxBuf[0] & 0x01) == 0) {
       memcpy(outUid, &rxBuf[2], 8);
       return true;
@@ -287,7 +325,7 @@ bool tryUnlockToniebox(uint8_t* outUid, String& unlockedTypeName) {
 
   // 1. Get Random Number: 0x02, 0xB2, 0x04
   uint8_t getRndCmd[] = { 0x02, 0xB2, 0x04 };
-  if (!transceiveRaw(getRndCmd, sizeof(getRndCmd), rxBuf, &rxLen, sizeof(rxBuf)) || rxLen < 3) {
+  if (!transceiveRaw(getRndCmd, sizeof(getRndCmd), rxBuf, &rxLen, sizeof(rxBuf), NULL, 15) || rxLen < 3) {
     return false; // Kein Privacy Tag im Feld -> Stille, kein Spam
   }
 
@@ -327,13 +365,13 @@ bool tryUnlockToniebox(uint8_t* outUid, String& unlockedTypeName) {
     if (i > 0) {
       memset(rxBuf, 0, sizeof(rxBuf));
       rxLen = 0;
-      if (!transceiveRaw(getRndCmd, sizeof(getRndCmd), rxBuf, &rxLen, sizeof(rxBuf)) || rxLen < 3) {
+      if (!transceiveRaw(getRndCmd, sizeof(getRndCmd), rxBuf, &rxLen, sizeof(rxBuf), NULL, 15) || rxLen < 3) {
         // Falls der Chip nach Fehlversuch blockiert: kurzer Powercycle zum Aufwecken
         nfc15693.setRF_off();
         delay(8);
         nfc15693.setRF_on();
         delay(10);
-        if (!transceiveRaw(getRndCmd, sizeof(getRndCmd), rxBuf, &rxLen, sizeof(rxBuf)) || rxLen < 3) {
+        if (!transceiveRaw(getRndCmd, sizeof(getRndCmd), rxBuf, &rxLen, sizeof(rxBuf), NULL, 15) || rxLen < 3) {
           continue;
         }
       }
@@ -401,24 +439,284 @@ bool tryUnlockToniebox(uint8_t* outUid, String& unlockedTypeName) {
   return false;
 }
 
-/**
- * Gesamter Scan-Ablauf:
- * 1. Standard Inventory (iCode SLI & bereits entsperrte Tonies) mit Entprellung
- * 2. Toniebox Unlock Engine
- */
-bool performNfcScan(String& detectedUid, String& chipType) {
+// ============================================================================
+// ISO-14443 TYPE A ENGINE (NTAG213 / NTAG215 / NTAG216 / MIFARE)
+// ============================================================================
+
+uint8_t activeTag14443RawUid[10];
+uint8_t activeTag14443RawLen = 0;
+
+bool transceiveRaw14443(const uint8_t* cmd, size_t cmdLen, uint8_t validBits,
+                        uint8_t* outBuf, uint16_t* outLen, uint16_t maxLen,
+                        uint16_t timeoutMs = 15) {
+  nfc15693.clearIRQStatus(0xFFFFFFFF);
+
+  if (!nfc15693.sendData((uint8_t*)cmd, cmdLen, validBits)) {
+    nfc15693.writeRegisterWithAndMask(SYSTEM_CONFIG, 0xfffffff8); // IDLE
+    nfc15693.clearIRQStatus(0xFFFFFFFF);
+    return false;
+  }
+
+  unsigned long start = millis();
+  uint32_t irqStatus = 0;
+
+  while (millis() - start < timeoutMs) {
+    irqStatus = nfc15693.getIRQStatus();
+    if (irqStatus & RX_IRQ_STAT) {
+      break;
+    }
+    delayMicroseconds(80);
+  }
+
+  if (!(irqStatus & RX_IRQ_STAT)) {
+    irqStatus = nfc15693.getIRQStatus();
+  }
+
+  if (!(irqStatus & RX_IRQ_STAT)) {
+    nfc15693.writeRegisterWithAndMask(SYSTEM_CONFIG, 0xfffffff8); // IDLE
+    nfc15693.clearIRQStatus(0xFFFFFFFF);
+    return false;
+  }
+
+  uint32_t rxStatus;
+  nfc15693.readRegister(PN5180_RX_STATUS, &rxStatus);
+  uint16_t len = (uint16_t)(rxStatus & 0x000001ff);
+
+  if (len == 0 || len > maxLen) {
+    nfc15693.writeRegisterWithAndMask(SYSTEM_CONFIG, 0xfffffff8); // IDLE
+    nfc15693.clearIRQStatus(0xFFFFFFFF);
+    return false;
+  }
+
+  uint8_t* data = nfc15693.readData(len, outBuf);
+  nfc15693.writeRegisterWithAndMask(SYSTEM_CONFIG, 0xfffffff8); // IDLE
+  nfc15693.clearIRQStatus(0xFFFFFFFF);
+
+  if (!data) {
+    return false;
+  }
+
+  if (outLen) *outLen = len;
+  return true;
+}
+
+void sendIso14443Halt() {
+  nfc15693.clearIRQStatus(0xFFFFFFFF);
+  nfc15693.writeRegisterWithOrMask(CRC_RX_CONFIG, 0x01);
+  nfc15693.writeRegisterWithOrMask(CRC_TX_CONFIG, 0x01);
+  uint8_t haltCmd[2] = { 0x50, 0x00 };
+  nfc15693.sendData(haltCmd, 2, 0x00);
+
+  // Warten bis PN5180 die Übertragung (TX) vollständig beendet hat
+  unsigned long start = millis();
+  while (millis() - start < 10) {
+    if (nfc15693.getIRQStatus() & TX_IRQ_STAT) {
+      break;
+    }
+    delayMicroseconds(50);
+  }
+  delay(1);
+  nfc15693.writeRegisterWithAndMask(SYSTEM_CONFIG, 0xfffffff8); // IDLE
+  nfc15693.clearIRQStatus(0xFFFFFFFF);
+}
+
+bool scanIso14443A(uint8_t* outUid, uint8_t* outLen, String& chipType) {
+  // Transceiver sauber stoppen
+  nfc15693.writeRegisterWithAndMask(SYSTEM_CONFIG, 0xfffffff8); // IDLE / StopCom
+  delayMicroseconds(100);
+
+  if (!switchToIso14443A()) {
+    return false;
+  }
+
+  // 1. Crypto1 aus, CRC aus für WUPA / REQA
+  nfc15693.writeRegisterWithAndMask(SYSTEM_CONFIG, 0xFFFFFFBF);
+  nfc15693.writeRegisterWithAndMask(CRC_RX_CONFIG, 0xFFFFFFFE);
+  nfc15693.writeRegisterWithAndMask(CRC_TX_CONFIG, 0xFFFFFFFE);
+
+  // 2. WUPA senden (0x52, 7 Bits) mit bis zu 3 Retries
+  // WUPA weckt Tags im IDLE-, READY-, ACTIVE- und HALT-Zustand auf
+  uint8_t wupaCmd = 0x52;
+  uint8_t atqaBuf[8];
+  uint16_t atqaLen = 0;
+  bool wupaOk = false;
+
+  for (int retry = 0; retry < 3; retry++) {
+    if (transceiveRaw14443(&wupaCmd, 1, 0x07, atqaBuf, &atqaLen, sizeof(atqaBuf), 15) && atqaLen >= 2) {
+      wupaOk = true;
+      break;
+    }
+    delay(2);
+  }
+
+  if (!wupaOk) {
+    nfc15693.writeRegisterWithAndMask(SYSTEM_CONFIG, 0xfffffff8); // IDLE
+    nfc15693.clearIRQStatus(0xFFFFFFFF);
+    return false;
+  }
+
+  delayMicroseconds(400);
+
+  // 3. Anticollision Cascade Level 1 (0x93, 0x20) ohne CRC
+  nfc15693.writeRegisterWithAndMask(CRC_RX_CONFIG, 0xFFFFFFFE);
+  nfc15693.writeRegisterWithAndMask(CRC_TX_CONFIG, 0xFFFFFFFE);
+  uint8_t cl1Cmd[2] = { 0x93, 0x20 };
+  uint8_t cl1Buf[8];
+  uint16_t cl1Len = 0;
+  if (!transceiveRaw14443(cl1Cmd, 2, 0x00, cl1Buf, &cl1Len, sizeof(cl1Buf), 15) || cl1Len < 5) {
+    nfc15693.writeRegisterWithAndMask(SYSTEM_CONFIG, 0xfffffff8);
+    nfc15693.clearIRQStatus(0xFFFFFFFF);
+    return false;
+  }
+
+  // BCC1 prüfen (XOR Byte 0..3)
+  uint8_t bcc1 = cl1Buf[0] ^ cl1Buf[1] ^ cl1Buf[2] ^ cl1Buf[3];
+  if (cl1Buf[4] != bcc1) {
+    nfc15693.writeRegisterWithAndMask(SYSTEM_CONFIG, 0xfffffff8);
+    nfc15693.clearIRQStatus(0xFFFFFFFF);
+    return false;
+  }
+
+  delayMicroseconds(400);
+
+  // 4. Select Cascade Level 1 mit CRC
+  nfc15693.writeRegisterWithOrMask(CRC_RX_CONFIG, 0x01);
+  nfc15693.writeRegisterWithOrMask(CRC_TX_CONFIG, 0x01);
+  uint8_t sel1Cmd[7];
+  sel1Cmd[0] = 0x93;
+  sel1Cmd[1] = 0x70;
+  memcpy(&sel1Cmd[2], cl1Buf, 5);
+  uint8_t sak1Buf[8];
+  uint16_t sak1Len = 0;
+  if (!transceiveRaw14443(sel1Cmd, 7, 0x00, sak1Buf, &sak1Len, sizeof(sak1Buf), 15) || sak1Len < 1) {
+    nfc15693.writeRegisterWithAndMask(SYSTEM_CONFIG, 0xfffffff8);
+    nfc15693.clearIRQStatus(0xFFFFFFFF);
+    return false;
+  }
+  uint8_t sak1 = sak1Buf[0];
+
+  // 5. Prüfen auf 7-Byte UID (Cascade Tag 0x88 in CL1) oder 4-Byte UID
+  if (cl1Buf[0] == 0x88) {
+    // 7-Byte UID (NTAG213 / NTAG215 / NTAG216 / MIFARE Ultralight)
+    if ((sak1 & 0x04) == 0) {
+      nfc15693.writeRegisterWithAndMask(SYSTEM_CONFIG, 0xfffffff8);
+      nfc15693.clearIRQStatus(0xFFFFFFFF);
+      return false;
+    }
+    outUid[0] = cl1Buf[1];
+    outUid[1] = cl1Buf[2];
+    outUid[2] = cl1Buf[3];
+
+    delayMicroseconds(400);
+
+    // Anticollision Cascade Level 2 (0x95, 0x20) ohne CRC
+    nfc15693.writeRegisterWithAndMask(CRC_RX_CONFIG, 0xFFFFFFFE);
+    nfc15693.writeRegisterWithAndMask(CRC_TX_CONFIG, 0xFFFFFFFE);
+    uint8_t cl2Cmd[2] = { 0x95, 0x20 };
+    uint8_t cl2Buf[8];
+    uint16_t cl2Len = 0;
+    if (!transceiveRaw14443(cl2Cmd, 2, 0x00, cl2Buf, &cl2Len, sizeof(cl2Buf), 15) || cl2Len < 5) {
+      nfc15693.writeRegisterWithAndMask(SYSTEM_CONFIG, 0xfffffff8);
+      nfc15693.clearIRQStatus(0xFFFFFFFF);
+      return false;
+    }
+
+    // BCC2 prüfen
+    uint8_t bcc2 = cl2Buf[0] ^ cl2Buf[1] ^ cl2Buf[2] ^ cl2Buf[3];
+    if (cl2Buf[4] != bcc2) {
+      nfc15693.writeRegisterWithAndMask(SYSTEM_CONFIG, 0xfffffff8);
+      nfc15693.clearIRQStatus(0xFFFFFFFF);
+      return false;
+    }
+
+    delayMicroseconds(400);
+
+    // Select Cascade Level 2 mit CRC
+    nfc15693.writeRegisterWithOrMask(CRC_RX_CONFIG, 0x01);
+    nfc15693.writeRegisterWithOrMask(CRC_TX_CONFIG, 0x01);
+    uint8_t sel2Cmd[7];
+    sel2Cmd[0] = 0x95;
+    sel2Cmd[1] = 0x70;
+    memcpy(&sel2Cmd[2], cl2Buf, 5);
+    uint8_t sak2Buf[8];
+    uint16_t sak2Len = 0;
+    if (!transceiveRaw14443(sel2Cmd, 7, 0x00, sak2Buf, &sak2Len, sizeof(sak2Buf), 15) || sak2Len < 1) {
+      nfc15693.writeRegisterWithAndMask(SYSTEM_CONFIG, 0xfffffff8);
+      nfc15693.clearIRQStatus(0xFFFFFFFF);
+      return false;
+    }
+
+    outUid[3] = cl2Buf[0];
+    outUid[4] = cl2Buf[1];
+    outUid[5] = cl2Buf[2];
+    outUid[6] = cl2Buf[3];
+    *outLen = 7;
+
+    // Kurze Beruhigungspause vor GET_VERSION (0x60)
+    delayMicroseconds(600);
+
+    // Chiptyp-Erkennung via GET_VERSION (0x60)
+    uint8_t getVerCmd = 0x60;
+    uint8_t verBuf[16];
+    uint16_t verLen = 0;
+    if (transceiveRaw14443(&getVerCmd, 1, 0x00, verBuf, &verLen, sizeof(verBuf), 20) && verLen >= 8) {
+      if (verBuf[6] == 0x0F) {
+        chipType = "NTAG213 (ISO-14443A)";
+      } else if (verBuf[6] == 0x11) {
+        chipType = "NTAG215 (ISO-14443A)";
+      } else if (verBuf[6] == 0x13) {
+        chipType = "NTAG216 (ISO-14443A)";
+      } else {
+        chipType = "NTAG / Ultralight (ISO-14443A)";
+      }
+    } else {
+      chipType = "NTAG213 / Ultralight (ISO-14443A)";
+    }
+  } else {
+    // 4-Byte UID (z. B. MIFARE Classic 1K / 4K)
+    if ((sak1 & 0x04) != 0) {
+      nfc15693.writeRegisterWithAndMask(SYSTEM_CONFIG, 0xfffffff8);
+      nfc15693.clearIRQStatus(0xFFFFFFFF);
+      return false;
+    }
+    outUid[0] = cl1Buf[0];
+    outUid[1] = cl1Buf[1];
+    outUid[2] = cl1Buf[2];
+    outUid[3] = cl1Buf[3];
+    *outLen = 4;
+
+    if (sak1 == 0x08) {
+      chipType = "MIFARE Classic 1K (ISO-14443A)";
+    } else if (sak1 == 0x18) {
+      chipType = "MIFARE Classic 4K (ISO-14443A)";
+    } else {
+      chipType = "ISO-14443A Tag";
+    }
+
+    // MIFARE Classic bleibt im ACTIVE Zustand (KEIN HALT)
+    nfc15693.writeRegisterWithAndMask(SYSTEM_CONFIG, 0xfffffff8); // IDLE
+    nfc15693.clearIRQStatus(0xFFFFFFFF);
+    return true;
+  }
+
+  // Transceiver sauber in IDLE versetzen (NTAG bleibt im ACTIVE Zustand selektiert)
+  nfc15693.writeRegisterWithAndMask(SYSTEM_CONFIG, 0xfffffff8); // IDLE
+  nfc15693.clearIRQStatus(0xFFFFFFFF);
+
+  return true;
+}
+
+bool scanIso15693Internal(String& detectedUid, String& chipType) {
+  if (!switchToIso15693()) {
+    return false;
+  }
+
   uint8_t uid[8];
   memset(uid, 0, sizeof(uid));
 
-  // Stufe 1: Standard-Inventory mit 2 Versuchen (schließt Wackler beim Auflegen aus)
+  // Stufe 1: Standard-Inventory
   if (readTagUid(uid)) {
-    detectedUid = formatUid(uid, 8);
-    chipType = "iCode SLI / ISO-15693 Standard";
-    return true;
-  }
-  delay(6);
-  if (readTagUid(uid)) {
-    detectedUid = formatUid(uid, 8);
+    detectedUid = formatUid(uid, 8, true);
     chipType = "iCode SLI / ISO-15693 Standard";
     return true;
   }
@@ -426,11 +724,190 @@ bool performNfcScan(String& detectedUid, String& chipType) {
   // Stufe 2: Toniebox Unlock Engine
   String unlockedType = "";
   if (tryUnlockToniebox(uid, unlockedType)) {
-    detectedUid = formatUid(uid, 8);
+    detectedUid = formatUid(uid, 8, true);
     chipType = unlockedType;
     return true;
   }
 
+  return false;
+}
+
+bool scanIso14443Internal(String& detectedUid, String& chipType) {
+  uint8_t uid[10];
+  uint8_t uidLen = 0;
+  memset(uid, 0, sizeof(uid));
+
+  if (scanIso14443A(uid, &uidLen, chipType)) {
+    detectedUid = formatUid(uid, uidLen, false);
+    memcpy(activeTag14443RawUid, uid, uidLen);
+    activeTag14443RawLen = uidLen;
+    return true;
+  }
+
+  return false;
+}
+
+// Presence-Check für 4-Byte Tags (MIFARE Classic 1K / 4K)
+// Da MIFARE Classic Speicherblöcke ohne Krypto-1 blockiert,
+// nutzen wir den schnellen WUPA -> Anticollision CL1 Zyklus (UID-Verifikation) mit bis zu 3 Retries.
+bool checkIso14443ClassicPresence(String& detectedUid, String& chipType) {
+  // Transceiver sauber stoppen
+  nfc15693.writeRegisterWithAndMask(SYSTEM_CONFIG, 0xfffffff8); // IDLE / StopCom
+  delayMicroseconds(100);
+
+  if (!switchToIso14443A()) return false;
+
+  for (int attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) {
+      delay(3);
+    }
+
+    // Crypto1 aus, CRC aus für WUPA
+    nfc15693.writeRegisterWithAndMask(SYSTEM_CONFIG, 0xFFFFFFBF);
+    nfc15693.writeRegisterWithAndMask(CRC_RX_CONFIG, 0xFFFFFFFE);
+    nfc15693.writeRegisterWithAndMask(CRC_TX_CONFIG, 0xFFFFFFFE);
+
+    uint8_t wupaCmd = 0x52;
+    uint8_t atqaBuf[8];
+    uint16_t atqaLen = 0;
+
+    if (!transceiveRaw14443(&wupaCmd, 1, 0x07, atqaBuf, &atqaLen, sizeof(atqaBuf), 15) || atqaLen < 2) {
+      continue;
+    }
+
+    delayMicroseconds(400);
+
+    // Anticollision CL1 ohne CRC
+    nfc15693.writeRegisterWithAndMask(CRC_RX_CONFIG, 0xFFFFFFFE);
+    nfc15693.writeRegisterWithAndMask(CRC_TX_CONFIG, 0xFFFFFFFE);
+    uint8_t cl1Cmd[2] = { 0x93, 0x20 };
+    uint8_t cl1Buf[8];
+    uint16_t cl1Len = 0;
+    if (!transceiveRaw14443(cl1Cmd, 2, 0x00, cl1Buf, &cl1Len, sizeof(cl1Buf), 15) || cl1Len < 5) {
+      continue;
+    }
+
+    // BCC1 prüfen
+    uint8_t bcc1 = cl1Buf[0] ^ cl1Buf[1] ^ cl1Buf[2] ^ cl1Buf[3];
+    if (cl1Buf[4] != bcc1) {
+      continue;
+    }
+
+    // UID-Prüfung gegen den aufliegenden Tag
+    if (cl1Buf[0] != activeTag14443RawUid[0] ||
+        cl1Buf[1] != activeTag14443RawUid[1] ||
+        cl1Buf[2] != activeTag14443RawUid[2] ||
+        cl1Buf[3] != activeTag14443RawUid[3]) {
+      continue;
+    }
+
+    // Tag verifiziert!
+    detectedUid = currentTagUid;
+    chipType = currentChipType;
+    return true;
+  }
+
+  nfc15693.writeRegisterWithAndMask(SYSTEM_CONFIG, 0xfffffff8);
+  nfc15693.clearIRQStatus(0xFFFFFFFF);
+  return false;
+}
+
+bool checkIso14443Presence(String& detectedUid, String& chipType) {
+  if (activeTag14443RawLen == 0) return false;
+
+  // 1. Spezieller optimierter Presence-Check für 4-Byte Tags (MIFARE Classic 1K / 4K)
+  if (activeTag14443RawLen == 4) {
+    if (checkIso14443ClassicPresence(detectedUid, chipType)) {
+      return true;
+    }
+    // Re-Scan ohne vorheriges HALT versuchen
+    return scanIso14443Internal(detectedUid, chipType);
+  }
+
+  // 2. Kontinuierlicher Presence-Check für 7-Byte Tags (NTAG213 / NTAG215 / NTAG216 / Ultralight)
+  if (!switchToIso14443A()) return false;
+
+  // Der NTAG ist bereits selektiert im ACTIVE Zustand.
+  // READ Page 0 (0x30, 0x00) mit aktiver CRC senden (3 Retries mit je 2ms Pause).
+  nfc15693.writeRegisterWithOrMask(CRC_RX_CONFIG, 0x01);
+  nfc15693.writeRegisterWithOrMask(CRC_TX_CONFIG, 0x01);
+
+  uint8_t readCmd[2] = { 0x30, 0x00 };
+  uint8_t rxBuf[24];
+  uint16_t rxLen = 0;
+  bool readOk = false;
+
+  for (int attempt = 0; attempt < 3; attempt++) {
+    if (transceiveRaw14443(readCmd, 2, 0x00, rxBuf, &rxLen, sizeof(rxBuf), 20) && rxLen >= 16) {
+      readOk = true;
+      break;
+    }
+    delay(2);
+  }
+
+  if (readOk) {
+    bool uidMatches = false;
+    if (rxBuf[0] == activeTag14443RawUid[0] &&
+        rxBuf[1] == activeTag14443RawUid[1] &&
+        rxBuf[2] == activeTag14443RawUid[2] &&
+        rxBuf[4] == activeTag14443RawUid[3] &&
+        rxBuf[5] == activeTag14443RawUid[4] &&
+        rxBuf[6] == activeTag14443RawUid[5] &&
+        rxBuf[7] == activeTag14443RawUid[6]) {
+      uidMatches = true;
+    }
+
+    nfc15693.writeRegisterWithAndMask(SYSTEM_CONFIG, 0xfffffff8); // IDLE
+    nfc15693.clearIRQStatus(0xFFFFFFFF);
+
+    if (uidMatches) {
+      detectedUid = currentTagUid;
+      chipType = currentChipType;
+      return true;
+    }
+  }
+
+  nfc15693.writeRegisterWithAndMask(SYSTEM_CONFIG, 0xfffffff8); // IDLE
+  nfc15693.clearIRQStatus(0xFFFFFFFF);
+
+  // Falls READ fehlschlägt (z. B. HF-Störung, Wackler oder State Reset):
+  // KEIN HALT senden! Ein HALT würde den NTAG im HALT-Zustand blockieren,
+  // sodass nachfolgende Page-Reads im nächsten Zyklus zwangsweise fehlschlagen.
+  // Stattdessen direkt Re-Scan versuchen (WUPA weckt den Tag in jedem Zustand auf).
+  return scanIso14443Internal(detectedUid, chipType);
+}
+
+/**
+ * Gesamter Scan-Ablauf:
+ * - Falls ein Tag aufliegt (tagPresent): Ausschließlich das aktive Protokoll scannen (Null HF-Modulationskonflikte)
+ * - Im Ruhezustand (kein Tag): ISO-15693 (Tonies) prüfen, danach ISO-14443A (NTAG213) prüfen
+ */
+bool performNfcScan(String& detectedUid, String& chipType) {
+  if (tagPresent) {
+    if (activeTagProtocol == PROTO_ISO14443A) {
+      // Wenn ein NTAG213 aufliegt: hochzuverlässiger Presence-Check per Read Page 0
+      return checkIso14443Presence(detectedUid, chipType);
+    } else {
+      // Wenn ein Tonie aufliegt: ausschließlich 15693 scannen
+      return scanIso15693Internal(detectedUid, chipType);
+    }
+  }
+
+  // Ruhezustand (kein Tag im Feld):
+  // 1. Zuerst ISO-15693 (Tonies) prüfen
+  if (scanIso15693Internal(detectedUid, chipType)) {
+    activeTagProtocol = PROTO_ISO15693;
+    return true;
+  }
+
+  // 2. Danach ISO-14443A (NTAG213 / MIFARE) prüfen
+  if (scanIso14443Internal(detectedUid, chipType)) {
+    activeTagProtocol = PROTO_ISO14443A;
+    return true;
+  }
+
+  // Wieder auf ISO-15693 zurückschalten für den nächsten Ruhezustands-Zyklus
+  switchToIso15693();
   return false;
 }
 
@@ -464,6 +941,10 @@ void updateTagState() {
         currentTagUid = "";
         currentChipType = "";
         missingTagCount = 0;
+        activeTag14443RawLen = 0;
+        memset(activeTag14443RawUid, 0, sizeof(activeTag14443RawUid));
+        activeTagProtocol = PROTO_ISO15693;
+        switchToIso15693();
         publishTagRemoved(removedUid);
       }
     }
@@ -527,7 +1008,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
   <div class="container">
     <header>
       <div>
-        <h1>ESP32 PN5180 NFC Reader v2.1</h1>
+        <h1>ESP32 PN5180 NFC Reader v2.2</h1>
         <div style="font-size: 0.85rem; color: var(--text-muted);">Reader-ID: <span id="val-reader" style="color: var(--accent); font-weight: 600;">%READER_ID%</span></div>
       </div>
       <div class="btn-group">
@@ -801,7 +1282,8 @@ void setup() {
   delay(500);
 
   addLog("==================================================");
-  addLog(String(" ESP32 PN5180 NFC Reader Firmware v2.1"));
+  addLog(String(" ESP32 PN5180 NFC Reader Firmware v2.2"));
+  addLog(String(" Protocols: ISO-15693 (Tonies) & ISO-14443A (NTAG213)"));
   addLog(String(" Reader-ID: ") + READER_ID + " | Debounce: " + String(MAX_MISSING_CYCLES) + " Zyklen");
   addLog("==================================================");
 

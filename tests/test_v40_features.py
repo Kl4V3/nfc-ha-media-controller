@@ -15,8 +15,8 @@ client = TestClient(app)
 
 
 def test_v40_version():
-    """Verify system version is bumped to 0.4.0."""
-    assert __version__ == "0.4.0"
+    """Verify system version is bumped to 0.4.1."""
+    assert __version__ == "0.4.1"
 
 
 def test_v40_config_environment_defaults():

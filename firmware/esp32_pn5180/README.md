@@ -11,11 +11,12 @@ Standard NFC chips (like the RC522 or PN532) are limited to ISO-14443 tags (Mifa
 **Toniebox figures** utilize **NXP ICODE SLIX2 (ISO-15693)** RFID transponders that operate in **Privacy Mode**. In this mode, the chip ignores standard inventory scans until an authenticated password handshake is executed.
 
 The **PN5180** features full hardware support for ISO-15693 protocol commands and custom SPI frames, enabling:
-- **Toniebox Figure Support:** Automatic password handshake bypass (`0x5B 0x6E 0xFD 0x7F`).
-- **ISO-15693 & ISO-14443 Support:** Reads Tonie figures, SLIX/SLIX2 chips, and standard NFC cards/stickers.
+- **Toniebox Figure Support:** Automatic password handshake bypass (`0x5B 0x6E 0xFD 0x7F`) for ISO-15693 SLIX2.
+- **NTAG213 / ISO-14443A Tag Support:** Full support for NTAG213, NTAG215, NTAG216, MIFARE Ultralight, and MIFARE Classic tags.
+- **Multi-Protocol Multiplexing:** Sticky protocol caching when a tag is playing to ensure zero latency (< 2ms per scan), with fast fallback scanning in standby mode.
 - **Continuous Polling (No LPCD):** Instant scan response without sleep latency.
-- **Toniebox Presence Detection:** Placing a tag publishes `scanned` (Play), removing it publishes `removed` (instant Stop).
-- **Built-in Web Diagnostics:** Built-in web server on port 80 showing Wi-Fi RSSI, connection status, and real-time serial logs.
+- **Toniebox & Tag Presence Detection:** Placing a tag publishes `scanned` (Play), removing it publishes `removed` (instant Stop).
+- **Built-in Web Diagnostics:** Built-in web server on port 80 showing Wi-Fi RSSI, connection status, tag UID, chip type, and real-time serial logs.
 
 ---
 

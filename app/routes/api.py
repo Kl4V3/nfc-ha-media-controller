@@ -181,10 +181,10 @@ def get_abs_series(request: Request, q: Optional[str] = None, library_id: Option
 
 
 @api_router.get("/abs/items")
-def get_abs_items(request: Request, q: Optional[str] = None, library_id: Optional[str] = None, token: Optional[str] = None, limit: int = 100):
+def get_abs_items(request: Request, q: Optional[str] = None, library_id: Optional[str] = None, token: Optional[str] = None, limit: int = 25):
     abs_client = request.app.state.abs_client
     if q and q.strip():
-        return abs_client.search_items(query=q, library_id=library_id, user_token=token)
+        return abs_client.search_items(query=q, library_id=library_id, user_token=token, limit=limit)
     return abs_client.get_items_list(library_id=library_id, user_token=token, limit=limit)
 
 
@@ -368,6 +368,34 @@ FIRMWARE_TEMPLATES = {
         ],
         "led_states": []
     },
+    "esp32_c3_pn5180": {
+        "id": "esp32_c3_pn5180",
+        "name": "⭐ ESP32-C3 Super Mini + PN5180 NFC (Toniebox & ISO-15693 / ISO-14443)",
+        "recommended": True,
+        "filename": "config.h",
+        "framework": "platformio",
+        "description": "Ultra-compact ESP32-C3 Super Mini (RISC-V) for Tonie figures (NXP ICODE SLIX2) and NFC cards via SPI.",
+        "features": [
+            "Ultra-compact ESP32-C3 Super Mini Form Factor",
+            "Native Toniebox Figure Support (Automatic Privacy-Password Handshake)",
+            "Dual-Protocol: Reads ISO-15693 (SLIX/SLIX2) and ISO-14443 (NTAG, Mifare)",
+            "Continuous Polling & Zero-Latency Presence Detection (Play on place, Stop on remove)",
+            "Integrated Web Diagnostic Server (Port 80) with Wi-Fi signal & live logs",
+            "Native USB-CDC Serial on USB-C Port",
+            "PlatformIO C++ Firmware (located in firmware/esp32_c3_pn5180)"
+        ],
+        "pinout": [
+            {"pin": "MOSI", "signal": "SPI MOSI", "gpio": "GPIO 6"},
+            {"pin": "MISO", "signal": "SPI MISO", "gpio": "GPIO 5"},
+            {"pin": "SCK", "signal": "SPI Clock", "gpio": "GPIO 4"},
+            {"pin": "NSS / CS", "signal": "Chip Select", "gpio": "GPIO 7"},
+            {"pin": "BUSY", "signal": "PN5180 Busy Flag", "gpio": "GPIO 0"},
+            {"pin": "RST", "signal": "PN5180 Reset", "gpio": "GPIO 1"},
+            {"pin": "3.3V / 5V", "signal": "Power Supply", "gpio": "5V & 3V3"},
+            {"pin": "GND", "signal": "GND", "gpio": "GND"}
+        ],
+        "led_states": []
+    },
     "m5atom_lite_rfid": {
         "id": "m5atom_lite_rfid",
         "name": "M5Stack ATOM Lite + RFID 2 Unit (Grove I2C)",
@@ -482,6 +510,9 @@ def find_template_file(filename: str) -> Optional[Path]:
         Path("/app/firmware/m5atom_lite_rfid/include"),
         Path("./firmware/m5atom_lite_rfid/include"),
         Path(__file__).parent.parent.parent / "firmware" / "m5atom_lite_rfid" / "include",
+        Path("/app/firmware/esp32_c3_pn5180/include"),
+        Path("./firmware/esp32_c3_pn5180/include"),
+        Path(__file__).parent.parent.parent / "firmware" / "esp32_c3_pn5180" / "include",
         Path("/app/firmware/esp32_pn5180/include"),
         Path("./firmware/esp32_pn5180/include"),
         Path(__file__).parent.parent.parent / "firmware" / "esp32_pn5180" / "include",
@@ -542,7 +573,7 @@ def generate_firmware_yaml(
         raise HTTPException(status_code=400, detail=f"Unbekannter Hardware-Typ: {hardware_type}")
 
     # Standardwerte aus Config / Parametern ableiten
-    final_reader_id = (reader_id or ("reader_box1" if hardware_type == "esp32_pn5180" else "reader_atom_1")).strip()
+    final_reader_id = (reader_id or ("reader_box1" if hardware_type in ("esp32_pn5180", "esp32_c3_pn5180") else "reader_atom_1")).strip()
     clean_dev_id = re.sub(r'[^a-zA-Z0-9_-]', '-', final_reader_id.lower()).replace('_', '-')
     
     final_device_name = (device_name or f"nfc-{clean_dev_id}").strip()
@@ -568,8 +599,8 @@ def generate_firmware_yaml(
         "wifi_password": final_wifi_pass,
     }
 
-    # Spezialfall: PlatformIO Firmware für ESP32 + PN5180
-    if hardware_type == "esp32_pn5180":
+    # Spezialfall: PlatformIO Firmware für ESP32 / ESP32-C3 + PN5180
+    if hardware_type in ("esp32_pn5180", "esp32_c3_pn5180"):
         rendered_code = f"""#ifndef CONFIG_H
 #define CONFIG_H
 
@@ -750,6 +781,7 @@ def get_firmware_manifest(hardware_type: str):
         raise HTTPException(status_code=400, detail=f"Unbekannter Hardware-Typ: {hardware_type}")
 
     tmpl_info = FIRMWARE_TEMPLATES[hardware_type]
+    chip_family = "ESP32-C3" if "c3" in hardware_type else "ESP32"
     return {
         "name": tmpl_info["name"],
         "version": __version__,
@@ -757,7 +789,7 @@ def get_firmware_manifest(hardware_type: str):
         "new_install_prompt_erase": True,
         "builds": [
             {
-                "chipFamily": "ESP32",
+                "chipFamily": chip_family,
                 "parts": [
                     {"path": f"/static/firmware/{hardware_type}/firmware.bin", "offset": 0}
                 ]
@@ -778,6 +810,10 @@ def download_firmware_bin(hardware_type: str):
                 bin_path = pio_path
         elif hardware_type == "esp32_pn5180":
             pio_path = Path(__file__).parent.parent.parent / "firmware" / "esp32_pn5180" / ".pio" / "build" / "esp32dev" / "firmware.bin"
+            if pio_path.is_file():
+                bin_path = pio_path
+        elif hardware_type == "esp32_c3_pn5180":
+            pio_path = Path(__file__).parent.parent.parent / "firmware" / "esp32_c3_pn5180" / ".pio" / "build" / "esp32-c3-supermini" / "firmware.bin"
             if pio_path.is_file():
                 bin_path = pio_path
         else:
@@ -809,7 +845,7 @@ def download_firmware_zip(
     if hardware_type not in FIRMWARE_TEMPLATES:
         raise HTTPException(status_code=400, detail=f"Unbekannter Hardware-Typ: {hardware_type}")
 
-    fw_dir_name = "esp32_pn5180" if hardware_type == "esp32_pn5180" else ("m5atom_lite_rfid" if "m5atom" in hardware_type else None)
+    fw_dir_name = "esp32_c3_pn5180" if hardware_type == "esp32_c3_pn5180" else ("esp32_pn5180" if hardware_type == "esp32_pn5180" else ("m5atom_lite_rfid" if "m5atom" in hardware_type else None))
     if not fw_dir_name:
         raise HTTPException(status_code=400, detail=f"Source project not available for {hardware_type}")
 

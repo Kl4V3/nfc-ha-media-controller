@@ -186,4 +186,30 @@ def test_download_m5atom_firmware_zip(client):
         assert 'READER_ID          = "reader_atom"' in config_h
 
 
+def test_download_esp32_c3_pn5180_zip(client):
+    res = client.get(
+        "/api/firmware/download-zip/esp32_c3_pn5180"
+        "?reader_id=reader_supermini"
+        "&wifi_ssid=C3WiFi"
+        "&wifi_password=SecretC3"
+    )
+    assert res.status_code == 200
+    assert "application/zip" in res.headers["content-type"]
+    assert "esp32_c3_pn5180_configured.zip" in res.headers.get("content-disposition", "")
+    
+    import zipfile
+    import io
+    with zipfile.ZipFile(io.BytesIO(res.content), "r") as zf:
+        namelist = zf.namelist()
+        assert "esp32_c3_pn5180/platformio.ini" in namelist
+        assert "esp32_c3_pn5180/include/config.h" in namelist
+        config_h = zf.read("esp32_c3_pn5180/include/config.h").decode("utf-8")
+        assert 'WIFI_SSID       = "C3WiFi"' in config_h
+        assert 'READER_ID          = "reader_supermini"' in config_h
 
+
+def test_download_esp32_c3_pn5180_bin(client):
+    res = client.get("/api/firmware/download-bin/esp32_c3_pn5180")
+    assert res.status_code == 200
+    assert "application/octet-stream" in res.headers["content-type"]
+    assert len(res.content) > 100000

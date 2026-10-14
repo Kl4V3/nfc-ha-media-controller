@@ -90,16 +90,22 @@ class AudiobookshelfClient:
         try:
             libraries = [library_id] if library_id else [lib["id"] for lib in self.get_libraries(user_token)]
             for lib_id in libraries:
-                url = f"{self.base_url}/api/libraries/{lib_id}/series?limit=100"
-                resp = requests.get(url, headers=self._get_headers(user_token), timeout=self.timeout)
-                if resp.status_code == 200:
+                page = 0
+                lib_series_count = 0
+                while True:
+                    url = f"{self.base_url}/api/libraries/{lib_id}/series?limit=100&page={page}"
+                    resp = requests.get(url, headers=self._get_headers(user_token), timeout=self.timeout)
+                    if resp.status_code != 200:
+                        break
                     data = resp.json()
-                    # Audiobookshelf gibt je nach Version 'results', 'series' oder ein Array zurück
                     series_items = []
+                    total = 0
                     if isinstance(data, dict):
                         series_items = data.get("results") or data.get("series") or []
+                        total = data.get("total", len(series_items))
                     elif isinstance(data, list):
                         series_items = data
+                        total = len(series_items)
 
                     for s in series_items:
                         books = s.get("books", [])
@@ -110,60 +116,74 @@ class AudiobookshelfClient:
                             "library_id": lib_id,
                             "num_books": num_books
                         })
+                        lib_series_count += 1
+
+                    if not series_items or len(series_items) < 100 or lib_series_count >= total or isinstance(data, list):
+                        break
+                    page += 1
         except Exception as e:
             logger.warning(f"Konnte ABS-Serien nicht abrufen: {e}")
         return all_series
 
-    def search_series(self, query: str, library_id: Optional[str] = None, user_token: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Durchsucht Bibliotheken nach Serien anhand eines Suchbegriffs."""
+    def search_series(self, query: str, library_id: Optional[str] = None, user_token: Optional[str] = None, limit: int = 100) -> List[Dict[str, Any]]:
+        """Durchsucht Bibliotheken nach Serien anhand eines Suchbegriffs.
+        Nutzt primär die schlanke get_series_list (/api/libraries/{id}/series), um keine
+        schweren Buch-Payloads (Audio-Tracks, Kapitel) mitzuladen.
+        """
         if not query or not query.strip():
-            return self.get_series_list(library_id=library_id, user_token=user_token)
+            return self.get_series_list(library_id=library_id, user_token=user_token)[:limit]
 
         q_clean = query.strip()
         q_lower = q_clean.lower()
         results = []
         seen_ids = set()
         try:
-            libraries = [library_id] if library_id else [lib["id"] for lib in self.get_libraries(user_token)]
-            for lib_id in libraries:
-                url = f"{self.base_url}/api/libraries/{lib_id}/search?q={requests.utils.quote(q_clean)}"
-                resp = requests.get(url, headers=self._get_headers(user_token), timeout=self.timeout)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    series_list = data.get("series") or []
-                    for s_entry in series_list:
-                        s = s_entry.get("series") if isinstance(s_entry, dict) and "series" in s_entry else s_entry
-                        if isinstance(s, dict):
-                            s_id = s.get("id")
-                            if s_id and s_id not in seen_ids:
-                                name = s.get("name") or ""
-                                if q_lower in name.lower() or q_lower in s_id.lower():
-                                    seen_ids.add(s_id)
-                                    books = s.get("books", [])
-                                    num_books = s.get("numBooks", len(books))
-                                    results.append({
-                                        "id": s_id,
-                                        "name": name,
-                                        "library_id": lib_id,
-                                        "num_books": num_books
-                                    })
-            # Fallback: Falls /search?q= nichts lieferte, durchsuche alle Serien der Bibliotheken
+            # 1. Bevorzugt: Direkte Filterung über get_series_list (nur ca. 48 KB Serienmetadaten)
+            all_s = self.get_series_list(library_id=library_id, user_token=user_token)
+            for s in all_s:
+                s_id = s.get("id")
+                name = s.get("name") or ""
+                if s_id and s_id not in seen_ids and (q_lower in name.lower() or q_lower in s_id.lower()):
+                    seen_ids.add(s_id)
+                    results.append(s)
+                    if len(results) >= limit:
+                        break
+
+            # 2. Fallback: Falls get_series_list leer war (z.B. Test-Mocks), nutze /search mit Limit
             if not results:
-                all_s = self.get_series_list(library_id=library_id, user_token=user_token)
-                for s in all_s:
-                    s_id = s.get("id")
-                    name = s.get("name") or ""
-                    if s_id and s_id not in seen_ids and (q_lower in name.lower() or q_lower in s_id.lower()):
-                        seen_ids.add(s_id)
-                        results.append(s)
+                libraries = [library_id] if library_id else [lib["id"] for lib in self.get_libraries(user_token)]
+                for lib_id in libraries:
+                    url = f"{self.base_url}/api/libraries/{lib_id}/search?q={requests.utils.quote(q_clean)}&limit={min(limit, 25)}"
+                    resp = requests.get(url, headers=self._get_headers(user_token), timeout=self.timeout)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        series_list = data.get("series") or []
+                        for s_entry in series_list:
+                            s = s_entry.get("series") if isinstance(s_entry, dict) and "series" in s_entry else s_entry
+                            if isinstance(s, dict):
+                                s_id = s.get("id")
+                                if s_id and s_id not in seen_ids:
+                                    name = s.get("name") or ""
+                                    if q_lower in name.lower() or q_lower in s_id.lower():
+                                        seen_ids.add(s_id)
+                                        books = s.get("books", [])
+                                        num_books = s.get("numBooks", len(books))
+                                        results.append({
+                                            "id": s_id,
+                                            "name": name,
+                                            "library_id": lib_id,
+                                            "num_books": num_books
+                                        })
+                                        if len(results) >= limit:
+                                            break
         except Exception as e:
             logger.warning(f"Fehler bei ABS-Seriensuche nach '{query}': {e}")
-        return results
+        return results[:limit]
 
-    def search_items(self, query: str, library_id: Optional[str] = None, user_token: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Durchsucht Bibliotheken nach Hörbüchern / Tracks anhand eines Suchbegriffs."""
+    def search_items(self, query: str, library_id: Optional[str] = None, user_token: Optional[str] = None, limit: int = 25) -> List[Dict[str, Any]]:
+        """Durchsucht Bibliotheken nach Hörbüchern / Tracks anhand eines Suchbegriffs (Standardlimit: 25)."""
         if not query or not query.strip():
-            return self.get_items_list(library_id=library_id, user_token=user_token, limit=200)
+            return self.get_items_list(library_id=library_id, user_token=user_token, limit=limit)
 
         q_clean = query.strip()
         q_lower = q_clean.lower()
@@ -172,8 +192,8 @@ class AudiobookshelfClient:
         try:
             libraries = [library_id] if library_id else [lib["id"] for lib in self.get_libraries(user_token)]
             for lib_id in libraries:
-                # 1. Direkter Search-Endpunkt /api/libraries/{id}/search?q=...
-                url = f"{self.base_url}/api/libraries/{lib_id}/search?q={requests.utils.quote(q_clean)}"
+                # 1. Direkter Search-Endpunkt /api/libraries/{id}/search?q=...&limit=25
+                url = f"{self.base_url}/api/libraries/{lib_id}/search?q={requests.utils.quote(q_clean)}&limit={limit}"
                 resp = requests.get(url, headers=self._get_headers(user_token), timeout=self.timeout)
                 if resp.status_code == 200:
                     data = resp.json()
@@ -204,11 +224,15 @@ class AudiobookshelfClient:
                                         "library_id": lib_id,
                                         "duration": media.get("duration", 0) if isinstance(media, dict) else 0
                                     })
+                                    if len(results) >= limit:
+                                        break
+                if len(results) >= limit:
+                    break
 
             # 2. Fallback: Falls /search?q= in allen Bibliotheken 0 Treffer ergab, filtere get_items_list mit Limit
             if not results:
                 for lib_id in libraries:
-                    url_items = f"{self.base_url}/api/libraries/{lib_id}/items?limit=200"
+                    url_items = f"{self.base_url}/api/libraries/{lib_id}/items?limit={limit}&minified=1"
                     resp_items = requests.get(url_items, headers=self._get_headers(user_token), timeout=self.timeout)
                     if resp_items.status_code == 200:
                         data_items = resp_items.json()
@@ -281,6 +305,7 @@ class AudiobookshelfClient:
         import base64
 
         # 1. Direkter Aufruf über Library-ID
+        series_name_from_api = None
         if library_id:
             # 1a. /api/libraries/{lib_id}/series/{series_id}
             url = f"{self.base_url}/api/libraries/{library_id}/series/{series_id}"
@@ -289,6 +314,7 @@ class AudiobookshelfClient:
                 if resp.status_code == 200:
                     data = resp.json()
                     series_obj = data.get("series") or data
+                    series_name_from_api = series_obj.get("name")
                     books = series_obj.get("books") or series_obj.get("libraryItems") or []
                     if books:
                         return series_obj
@@ -303,19 +329,45 @@ class AudiobookshelfClient:
                 if resp.status_code == 200:
                     data = resp.json()
                     raw_items = data.get("results", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+                    total = data.get("total", len(raw_items)) if isinstance(data, dict) else len(raw_items)
+
+                    # Paginierung falls Serie > 100 Bücher umfasst
+                    page = 1
+                    while isinstance(data, dict) and len(raw_items) < total:
+                        next_url = f"{self.base_url}/api/libraries/{library_id}/items?filter=series.{b64_id}&limit=100&page={page}"
+                        next_resp = requests.get(next_url, headers=self._get_headers(user_token), timeout=self.timeout)
+                        if next_resp.status_code != 200:
+                            logger.warning(f"Konnte weitere ABS-Items (Seite {page}) für Serie '{series_id}' nicht laden: HTTP {next_resp.status_code}")
+                            break
+                        next_data = next_resp.json()
+                        next_items = next_data.get("results", []) if isinstance(next_data, dict) else (next_data if isinstance(next_data, list) else [])
+                        if not next_items:
+                            break
+                        raw_items.extend(next_items)
+                        page += 1
+
                     if raw_items:
-                        series_name = "Serie"
+                        series_name = series_name_from_api or "Serie"
                         for item in raw_items:
+                            media = item.get("media", {}) if isinstance(item.get("media"), dict) else {}
+                            meta = media.get("metadata", {}) if isinstance(media.get("metadata"), dict) else {}
+
                             # Suche Seriennamen in Metadaten
-                            item_series = item.get("media", {}).get("metadata", {}).get("series") or []
+                            item_series = meta.get("series") or []
                             if isinstance(item_series, list):
                                 for s_entry in item_series:
                                     if isinstance(s_entry, dict) and (s_entry.get("id") == series_id or s_entry.get("name")):
-                                        series_name = s_entry.get("name", series_name)
+                                        series_name = s_entry.get("name") or series_name
                                         # Sequenz auf Root-Ebene für Sortierung
                                         item["sequence"] = s_entry.get("sequence", item.get("sequence"))
                                         break
-                        logger.info(f"ABS-Filterabfrage für Serie '{series_name}' ({series_id}) erfolgreich: {len(raw_items)} Bücher gefunden.")
+
+                            # Fallback: Falls der Name noch 'Serie' ist, prüfe metadata.seriesName
+                            if series_name == "Serie" and meta.get("seriesName"):
+                                import re
+                                series_name = re.sub(r'\s*#\s*\d+.*$', '', str(meta.get("seriesName"))).strip() or series_name
+
+                        logger.info(f"ABS-Filterabfrage für Serie '{series_name}' ({series_id}) erfolgreich: {len(raw_items)} von {total} Büchern geladen.")
                         return {
                             "id": series_id,
                             "name": series_name,
@@ -330,7 +382,14 @@ class AudiobookshelfClient:
             resp = requests.get(url, headers=self._get_headers(user_token), timeout=self.timeout)
             if resp.status_code == 200:
                 data = resp.json()
-                return data.get("series") or data
+                series_obj = data.get("series") or data
+                books = series_obj.get("books") or series_obj.get("libraryItems") or []
+                if books:
+                    return series_obj
+                lib_from_series = series_obj.get("libraryId")
+                if lib_from_series and not library_id:
+                    return self.get_series_details(series_id, library_id=lib_from_series, user_token=user_token)
+                return series_obj
         except Exception as e:
             logger.debug(f"Direkte Serienabfrage {url} fehlgeschlagen: {e}")
 
@@ -674,7 +733,7 @@ class AudiobookshelfClient:
                 target_libs = podcast_libs if podcast_libs else [lib["id"] for lib in libraries]
 
             for lib_id in target_libs:
-                url = f"{self.base_url}/api/libraries/{lib_id}/items?limit=100"
+                url = f"{self.base_url}/api/libraries/{lib_id}/items?limit=50&minified=1"
                 resp = requests.get(url, headers=self._get_headers(user_token), timeout=self.timeout)
                 if resp.status_code == 200:
                     data = resp.json()
@@ -699,10 +758,10 @@ class AudiobookshelfClient:
             logger.warning(f"Konnte ABS-Podcasts nicht abrufen: {e}")
         return podcasts
 
-    def search_podcasts(self, query: str, library_id: Optional[str] = None, user_token: Optional[str] = None) -> List[Dict[str, Any]]:
+    def search_podcasts(self, query: str, library_id: Optional[str] = None, user_token: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
         """Durchsucht Bibliotheken nach Podcasts."""
         if not query or not query.strip():
-            return self.get_podcast_list(library_id=library_id, user_token=user_token)
+            return self.get_podcast_list(library_id=library_id, user_token=user_token)[:limit]
 
         q_clean = query.strip().lower()
         all_podcasts = self.get_podcast_list(library_id=library_id, user_token=user_token)
@@ -711,7 +770,7 @@ class AudiobookshelfClient:
             if q_clean in (p.get("title") or "").lower()
             or q_clean in (p.get("author") or "").lower()
             or q_clean in (p.get("id") or "").lower()
-        ]
+        ][:limit]
 
     def get_podcast_details(self, podcast_id: str, library_id: Optional[str] = None, user_token: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Ruft Details eines Podcasts ab (inkl. Episodenliste)."""

@@ -410,9 +410,15 @@ document.addEventListener("DOMContentLoaded", () => {
     let modalSearchTimeout = null;
     inputModalAbsSearch.addEventListener("input", () => {
         clearTimeout(modalSearchTimeout);
+        const query = inputModalAbsSearch.value.trim();
+        if (query.length === 1) {
+            // Bei 1 Zeichen: nur lokal filtern, noch keine teure Netzanfrage
+            renderModalAbsResults();
+            return;
+        }
         modalSearchTimeout = setTimeout(() => {
             loadModalAbsContent();
-        }, 250);
+        }, 400);
     });
 
     async function loadModalAbsContent() {
@@ -425,7 +431,7 @@ document.addEventListener("DOMContentLoaded", () => {
         } else if (modalAbsCurrentTab === "podcasts") {
             endpoint = `/api/abs/podcasts${query ? "?q=" + encodeURIComponent(query) : ""}`;
         } else {
-            endpoint = `/api/abs/items?limit=200${query ? "&q=" + encodeURIComponent(query) : ""}`;
+            endpoint = `/api/abs/items?limit=25${query ? "&q=" + encodeURIComponent(query) : ""}`;
         }
 
         try {
@@ -1277,9 +1283,15 @@ document.addEventListener("DOMContentLoaded", () => {
     let absExplorerSearchTimeout = null;
     inputAbsSearch.addEventListener("input", () => {
         clearTimeout(absExplorerSearchTimeout);
+        const query = inputAbsSearch.value.trim();
+        if (query.length === 1) {
+            // Bei 1 Zeichen: nur lokal filtern, noch keine teure Netzanfrage
+            renderAbsContentList();
+            return;
+        }
         absExplorerSearchTimeout = setTimeout(() => {
             loadAbsContent();
-        }, 250);
+        }, 400);
     });
 
     async function loadAbsContent() {
@@ -1292,7 +1304,7 @@ document.addEventListener("DOMContentLoaded", () => {
         } else if (absCurrentTab === "podcasts") {
             endpoint = `/api/abs/podcasts${query ? "?q=" + encodeURIComponent(query) : ""}`;
         } else {
-            endpoint = `/api/abs/items?limit=200${query ? "&q=" + encodeURIComponent(query) : ""}`;
+            endpoint = `/api/abs/items?limit=25${query ? "&q=" + encodeURIComponent(query) : ""}`;
         }
 
         try {
@@ -1579,9 +1591,9 @@ document.addEventListener("DOMContentLoaded", () => {
             btnDownloadZip.style.display = isPlatformIO ? "inline-flex" : "none";
         }
 
-        // Download Bin Button visibility (esp32_pn5180, m5atom_lite_rfid, m5atom_lite_rfid_native)
+        // Download Bin Button visibility (esp32_pn5180, esp32_c3_pn5180, m5atom_lite_rfid, m5atom_lite_rfid_native)
         if (btnDownloadBin) {
-            btnDownloadBin.style.display = (profile.id === "m5atom_lite_rfid" || profile.id === "m5atom_lite_rfid_native" || profile.id === "esp32_pn5180") ? "inline-flex" : "none";
+            btnDownloadBin.style.display = (profile.id === "m5atom_lite_rfid" || profile.id === "m5atom_lite_rfid_native" || profile.id === "esp32_pn5180" || profile.id === "esp32_c3_pn5180") ? "inline-flex" : "none";
         }
 
         // Step 3 Instructions Toggle

@@ -1,7 +1,7 @@
 # NFC Media Controller
 
 [![Docker Image](https://img.shields.io/docker/v/theklave/nfc-ha-media-controller?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/theklave/nfc-ha-media-controller)
-[![Release](https://img.shields.io/badge/version-0.4.0-brightgreen.svg)](https://github.com/Kl4V3/nfc-ha-media-controller/releases)
+[![Release](https://img.shields.io/badge/version-0.4.1-brightgreen.svg)](https://github.com/Kl4V3/nfc-ha-media-controller/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg?logo=python)](https://www.python.org/)
 
@@ -85,9 +85,10 @@ The system enforces deterministic physical presence playback: placing an assigne
 - **Lazy Evaluation & Debounce State Protection:**
   - Tag removal events immediately trigger playback stoppage without initiating heavy upstream API queries.
   - Scan events occurring within 3 seconds of a removal event automatically trigger an asynchronous debounce delay to allow downstream players and Audiobookshelf sync sessions to settle cleanly.
-- **Dynamic Series Progression (Audiobookshelf):**
+- **Dynamic Series Progression & Auto-Pagination (v0.4.1):**
   - Evaluates series completion states based on a 95% completion threshold (`progress >= 0.95` or `isFinished == true`).
   - Automatically identifies and queues the next unfinished book in sequence.
+  - **Dynamic Series Pagination:** Transparently loads long series (>100 books) via multi-page batching, ensuring complete analysis regardless of series size.
   - Active server synchronization: Automatically invokes Audiobookshelf's `mark_as_finished` endpoint for completed books to prevent stale resume positions.
   - Seamless loopback: Automatically resets to Book 1 once all titles in a series are complete.
 - **Reverse-Chronological Podcast Resolution:**
@@ -140,25 +141,26 @@ An alternative ESPHome configuration is provided in `esphome/esphome_m5atom_lite
 
 ---
 
-### 2. ESP32 + NXP PN5180 (ISO-15693 / SLIX2)
+### 2. ESP32 / ESP32-C3 + NXP PN5180 (ISO-15693 / SLIX2)
 
 Required for reading high-frequency ISO-15693 transponders, including original Toniebox figures protected by privacy mode passwords.
 
 - **Operating Principle:** Transmits the SLIX2 privacy password unlock handshake (`0x5B 0x6E 0xFD 0x7F`) over SPI to expose transponder memory.
-- **Source:** PlatformIO project located in `firmware/esp32_pn5180/`.
+- **Source (ESP32 Standard):** PlatformIO project located in `firmware/esp32_pn5180/`.
+- **Source (ESP32-C3 Super Mini):** PlatformIO project located in `firmware/esp32_c3_pn5180/`.
 
 #### SPI Pin Mapping
 
-| PN5180 Pin | ESP32 GPIO | Function |
-| :--- | :--- | :--- |
-| **MOSI** | **GPIO 23** | SPI Master Out Slave In |
-| **MISO** | **GPIO 19** | SPI Master In Slave Out |
-| **SCK** | **GPIO 18** | SPI Clock |
-| **NSS / CS** | **GPIO 5** | SPI Chip Select |
-| **BUSY** | **GPIO 21** | Hardware Busy Signal |
-| **RST** | **GPIO 22** | Hardware Reset |
-| **3.3V / 5V** | **3.3V / 5V** | Regulated Supply Voltage |
-| **GND** | **GND** | Common Ground |
+| PN5180 Pin | ESP32 GPIO | ESP32-C3 Super Mini GPIO | Function |
+| :--- | :--- | :--- | :--- |
+| **MOSI** | **GPIO 23** | **GPIO 6** | SPI Master Out Slave In |
+| **MISO** | **GPIO 19** | **GPIO 5** | SPI Master In Slave Out |
+| **SCK** | **GPIO 18** | **GPIO 4** | SPI Clock |
+| **NSS / CS** | **GPIO 5** | **GPIO 7** | SPI Chip Select |
+| **BUSY** | **GPIO 21** | **GPIO 0** | Hardware Busy Signal |
+| **RST** | **GPIO 22** | **GPIO 1** | Hardware Reset |
+| **3.3V / 5V** | **3.3V / 5V** | **5V & 3V3** | Regulated Supply Voltage |
+| **GND** | **GND** | **GND** | Common Ground |
 
 ---
 

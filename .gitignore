@@ -16,5 +16,7 @@ htmlcov/
 .DS_Store
 .esphome/
 esphome/.esphome/
-.pio/
+**/.pio/
+**/.vscode/
+**/config.h
 firmware/**/include/config.h
